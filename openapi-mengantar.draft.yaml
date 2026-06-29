@@ -1,0 +1,365 @@
+openapi: 3.1.0
+info:
+  title: Mengantar Public API (draft, reverse-engineered)
+  version: 0.1.0-draft
+  description: >-
+    Draft spec hasil membedah plugin WooCommerce "Woo Mengantar" v1.0.32.
+    BELUM diverifikasi dengan akun asli. Schema response sebagian berdasarkan
+    field yang dibaca plugin; lengkapi via 10-verification-checklist.md.
+    Autentikasi: API key diletakkan di PATH (`/api/public/{apiKey}`), bukan header.
+servers:
+  - url: https://api-public.mengantar.com
+    description: Produksi
+  - url: https://sandbox.mengantar.com
+    description: Sandbox
+
+paths:
+  /api/public/{apiKey}/:
+    get:
+      operationId: ping
+      summary: Ping / cek ketersediaan
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      responses:
+        '200': { description: Online }
+
+  /api/public/{apiKey}/address/search:
+    get:
+      operationId: searchAddress
+      summary: Cari wilayah tujuan (kecamatan/kelurahan)
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - name: keyword
+          in: query
+          required: true
+          schema: { type: string, minLength: 3 }
+      responses:
+        '200':
+          description: Daftar wilayah
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AddressSearchItem' }
+
+  /api/public/{apiKey}/address:
+    get:
+      operationId: listOrigins
+      summary: List alamat pickup (origin)
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      responses:
+        '200':
+          description: Daftar origin
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PickupAddress' }
+    post:
+      operationId: upsertOrigin
+      summary: Buat / update alamat pickup (form-urlencoded; sertakan _id untuk update)
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: '#/components/schemas/PickupAddressInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+
+  /api/public/{apiKey}/order/estimate:
+    get:
+      operationId: estimate
+      summary: Estimasi ongkir (single atau all)
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - { name: origin_id, in: query, required: true, schema: { type: string } }
+        - { name: destination_id, in: query, required: true, schema: { type: string } }
+        - { name: courier, in: query, schema: { type: string, default: all } }
+        - { name: weight, in: query, schema: { type: number, default: 1 }, description: kg }
+        - { name: cod_amount, in: query, schema: { type: integer }, description: IDR; hilangkan bila 0 }
+      responses:
+        '200':
+          description: >-
+            data = objek per-kurir bila courier tunggal, ATAU map {courierKey: CourierRate} bila all.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        oneOf:
+                          - $ref: '#/components/schemas/CourierRate'
+                          - type: object
+                            additionalProperties: { $ref: '#/components/schemas/CourierRate' }
+
+  /api/order/allEstimate3PL:
+    get:
+      operationId: estimate3pl
+      summary: Estimasi semua kurir (mode 3PL) — TANPA prefix /api/public/{key}
+      parameters:
+        - { name: origin_id, in: query, required: true, schema: { type: string } }
+        - { name: destination_id, in: query, required: true, schema: { type: string } }
+        - { name: courier, in: query, schema: { type: string, default: all } }
+        - { name: weight, in: query, schema: { type: number } }
+        - { name: cod_amount, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: Map kurir → rate }
+
+  /api/order/allEstimatePublic:
+    get:
+      operationId: estimatePublic
+      summary: Estimasi semua kurir (public) — TANPA prefix /api/public/{key}
+      parameters:
+        - { name: origin_id, in: query, required: true, schema: { type: string } }
+        - { name: destination_id, in: query, required: true, schema: { type: string } }
+        - { name: courier, in: query, schema: { type: string, default: all } }
+        - { name: weight, in: query, schema: { type: number } }
+      responses:
+        '200': { description: Map kurir → rate }
+
+  /api/public/{apiKey}/order:
+    post:
+      operationId: createOrder
+      summary: Buat shipment
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderRequest' }
+      responses:
+        '200':
+          description: Hasil pembuatan (data = array per order)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateOrderResponse' }
+    get:
+      operationId: getOrder
+      summary: Lacak shipment by order_id atau tracking_id
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - { name: order_id, in: query, schema: { type: string } }
+        - { name: tracking_id, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties: { data: { $ref: '#/components/schemas/TrackingInfo' } }
+
+  /api/public/{apiKey}/time:
+    get:
+      operationId: listPickupTimes
+      summary: List jadwal pickup untuk satu origin
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - { name: address, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+    post:
+      operationId: addPickupTime
+      summary: Tambah jadwal pickup (form)
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [address_id, date, time]
+              properties:
+                address_id: { type: string }
+                date: { type: string, example: '2026-07-10' }
+                time: { type: string, example: '09:00' }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+
+  /api/public/{apiKey}/time/{timeId}:
+    delete:
+      operationId: deletePickupTime
+      summary: Hapus jadwal pickup
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - { name: timeId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+
+  /api/public/{apiKey}/invoices:
+    get:
+      operationId: listInvoices
+      summary: List invoice akun
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+
+components:
+  parameters:
+    ApiKey:
+      name: apiKey
+      in: path
+      required: true
+      schema: { type: string }
+      description: API key Mengantar (RAHASIA — server-only)
+
+  responses:
+    Envelope:
+      description: Amplop standar
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        errors: {}
+        errorsFront: {}
+      required: [success]
+
+    AddressSearchItem:
+      type: object
+      description: Kapitalisasi field bervariasi; dukung fallback.
+      properties:
+        id: { type: string }
+        _id: { type: string }
+        SUBDISTRICT_NAME: { type: string }
+        DISTRICT_NAME: { type: string }
+        CITY_NAME: { type: string }
+        PROVINCE_NAME: { type: string }
+        zip: { type: string }
+
+    PickupAddress:
+      type: object
+      properties:
+        _id: { type: string }
+        PICKUP_NAME: { type: string }
+        PICKUP_PIC: { type: string }
+        PICKUP_PIC_PHONE: { type: string }
+        PICKUP_AUTOFILL: { type: string }
+        PICKUP_FULL_AUTOFILL: { type: string }
+        PICKUP_ADDRESS: { type: string }
+
+    PickupAddressInput:
+      type: object
+      required: [PICKUP_NAME, PICKUP_PIC, PICKUP_PIC_PHONE, PICKUP_AUTOFILL, PICKUP_ADDRESS]
+      properties:
+        PICKUP_NAME: { type: string }
+        PICKUP_PIC: { type: string }
+        PICKUP_PIC_PHONE: { type: string }
+        PICKUP_AUTOFILL: { type: string, description: destination_id alamat }
+        PICKUP_ADDRESS: { type: string }
+        _id: { type: string, description: hanya untuk update }
+
+    CourierRate:
+      type: object
+      properties:
+        price: { type: number }
+        estimatedSpecialPrice: { type: number, description: bila ada, dipakai menggantikan price }
+        estimate_delivery: { type: string, example: '2-3 hari' }
+        estimatedDate: { type: string }
+        unsupported: { type: boolean }
+        unsupported_cod: { type: boolean }
+        discount: { type: number }
+        origin_data:
+          type: object
+          description: Override harga (mis. SAP multi-origin)
+          additionalProperties: true
+
+    CreateOrderRequest:
+      type: object
+      required: [courier, pickup, orders]
+      properties:
+        courier:
+          type: string
+          enum: [JNE, SiCepat, Sap, iDexpress, JT, Ninja, lion, anteraja]
+        assignee: { type: string }
+        pickup: { $ref: '#/components/schemas/Pickup' }
+        orders:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/OrderItem' }
+
+    Pickup:
+      type: object
+      required: [type, address_id]
+      properties:
+        type: { type: string, enum: [scheduledPickup, dropOff] }
+        address_id: { type: string, description: origin_id }
+        time_id: { type: string, description: wajib bila scheduledPickup }
+        time_label: { type: string, example: '2026-07-10 [09:00-12:00]' }
+        volume: { type: string, enum: [volumeMotor, volumeMobil, volumeTruck] }
+        origin_label: { type: string }
+
+    OrderItem:
+      type: object
+      required: [customerAddressDataId, customerAddress, customerName, customerPhone, weight, quantity, parcelContent]
+      properties:
+        customerAddressDataId: { type: string, description: destination_id }
+        customerAddress: { type: string, minLength: 10 }
+        customerName: { type: string }
+        customerPhone: { type: string, description: digit saja, maks 15 }
+        weight: { type: number, minimum: 1, description: kg }
+        quantity: { type: integer }
+        parcelContent: { type: string }
+        goodsValue: { type: number, description: NON-COD (eksklusif vs COD) }
+        COD: { type: number, description: COD (eksklusif vs goodsValue) }
+        customProducts:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              qty: { type: integer }
+              price: { type: number }
+              weight: { type: number }
+              variant: { type: string }
+
+    CreateOrderResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        batch: { type: string }
+        batch_id: { type: string }
+        courier: { type: string }
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              ORDER_ID: { type: string }
+              cnote_no: { type: string, description: nomor resi }
+              status: { type: string }
+              statusCategory: { type: string }
+              payment_status: { type: string, enum: [paid, unpaid] }
+              error: { type: string }
+
+    TrackingInfo:
+      type: object
+      properties:
+        cnote_no: { type: string }
+        ORDER_ID: { type: string }
+        courier: { type: string }
+        status: { type: string }
+        statusCategory: { type: string }
+        PICKUP_NAME: { type: string }
+        PICKUP_SERVICE: { type: string }
+        RECEIVER_NAME: { type: string }
+        RECEIVER_PHONE: { type: string }
+        FULL_RECEIVER_ADDRESS: { type: string }
+        GOODS_DESC: { type: string }
+        WEIGHT: { type: string }
+        createdAt: { type: string }
+        history:
+          type: array
+          items: { type: object, additionalProperties: true }
