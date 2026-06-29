@@ -132,3 +132,6 @@ curl -sS "$MGT_PREFIX/invoices" | jq
 
 Rekam tiap response apa adanya ke [10-verification-checklist.md](10-verification-checklist.md)
 untuk memvalidasi/melengkapi skema di [01-api-reference.md](01-api-reference.md).
+
+---
+<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

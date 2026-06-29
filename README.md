@@ -1,12 +1,15 @@
 <div align="center">
 
+<img src="assets/ongkipro-mengantar-banner.svg" alt="ongki.pro × Mengantar — Official Partner" width="100%">
+
 # 📦 Mengantar API — Dokumentasi Integrasi
 
-**Referensi API ongkir & shipment multi-kurir Indonesia, hasil membedah plugin WooCommerce
-"Woo Mengantar" v1.0.32 — disusun ulang agar bisa dipakai di stack apa pun (Astro, Next.js, dan lainnya).**
+**Dokumentasi & toolkit integrasi API ongkir + shipment multi-kurir Indonesia —
+disusun oleh [ongki.pro](https://ongki.pro), Official Partner Mengantar.**
+Siap dipakai di stack apa pun (Astro, Next.js, dan lainnya).
 
-![status](https://img.shields.io/badge/status-draft%20(perlu%20verifikasi%20key)-orange)
-![source](https://img.shields.io/badge/sumber-Woo%20Mengantar%20v1.0.32-blue)
+[![Official Partner](https://img.shields.io/badge/Mengantar-Official%20Partner-22d3ee?labelColor=0b1220)](https://ongki.pro)
+[![by ongki.pro](https://img.shields.io/badge/by-ongki.pro-34d399?labelColor=0b1220)](https://ongki.pro)
 ![scope](https://img.shields.io/badge/cakupan-REST%20%2B%20alur%20%2B%20data%20model-success)
 ![couriers](https://img.shields.io/badge/kurir-JNE%20·%20SiCepat%20·%20J%26T%20·%20Anteraja%20·%20Ninja%20·%20Lion%20·%20IDExpress%20·%20SAP-lightgrey)
 
@@ -17,11 +20,11 @@
 ## 🎯 Apa ini?
 
 Mengantar.com adalah **agregator logistik** Indonesia: satu API untuk cek ongkir banyak kurir,
-membuat shipment, menjadwalkan pickup, dan melacak resi. API publiknya **tidak punya dokumentasi
-resmi** — dokumen ini merekonstruksinya dari kode plugin resmi mereka, lalu menyajikannya sebagai
-referensi netral + panduan implementasi headless.
+membuat shipment, menjadwalkan pickup, dan melacak resi. Sebagai **Official Partner Mengantar**,
+[ongki.pro](https://ongki.pro) menyusun dokumentasi & toolkit integrasi ini agar tim/klien bisa
+menanamkan layanan Mengantar ke storefront atau backend mereka — headless, di stack apa pun.
 
-> **Status:** belum ada akun/API key. Fokus dokumen = *cara kerja* & *jalur API*. Begitu key tersedia,
+> **Catatan:** sebagian skema response masih perlu dikonfirmasi dengan akun/sandbox. Begitu key tersedia,
 > jalankan smoke-test ([09](09-curl-examples.md)) dan lengkapi schema ([10](10-verification-checklist.md)).
 
 ---
@@ -155,3 +158,15 @@ curl -sS "$MGT_PREFIX/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destinat
 - 🗺️ Nama wilayah dari API **tidak standar** → wajib dinormalisasi ([03](03-data-model.md) §6).
 - 🔌 Tidak ada endpoint validasi key khusus — plugin pakai estimate dummy ([01](01-api-reference.md) §10).
 - 📭 Tidak ada indikasi webhook — status diambil via **polling** (perlu konfirmasi).
+
+---
+
+## 🤝 Tentang
+
+Dokumentasi & toolkit ini disusun dan dikelola oleh **[ongki.pro](https://ongki.pro)** —
+**Official Partner Mengantar**. Kami bantu integrasi API Mengantar, pembuatan storefront
+headless (Astro/Next.js), serta otomasi ongkir, shipment, dan tracking untuk toko online.
+
+> 💬 **Butuh integrasi atau kerja sama?** Hubungi kami di **[ongki.pro](https://ongki.pro)**.
+
+<div align="center"><sub>© ongki.pro · Official Partner Mengantar</sub></div>

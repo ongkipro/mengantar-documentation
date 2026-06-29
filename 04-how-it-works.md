@@ -143,3 +143,6 @@ Operasi tulis di admin dijaga `nonce` (anti-CSRF) + cek hak akses (`manage_wooco
 - **Idempotensi**: simpan `order_id`/`cnote_no`; jangan buat ulang shipment yang sudah ada (skip-existing).
 - **Validasi sebelum kirim**: panjang alamat, batas berat per service, rentang COD per kurir.
 - **Normalisasi wilayah**: nama provinsi/kota dari API tidak standar — petakan dulu.
+
+---
+<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

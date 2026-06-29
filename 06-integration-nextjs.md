@@ -226,3 +226,6 @@ const shipment = {
 - Buat shipment via job/queue + retry, dan polling resi dengan backoff — lihat [04-how-it-works.md](04-how-it-works.md).
 - `next: { revalidate: 300 }` meniru cache 5 menit plugin untuk GET; POST selalu `no-store`.
 - Jangan pernah letakkan `MENGANTAR_API_KEY` di komponen client atau `NEXT_PUBLIC_*`.
+
+---
+<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

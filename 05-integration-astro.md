@@ -204,3 +204,6 @@ const shipment = {
 - Buat shipment lewat **queue/job** (bukan saat request checkout) + retry, dan **polling resi**
   dengan backoff — lihat [04-how-it-works.md](04-how-it-works.md).
 - Untuk store besar, simpan `origin_id` & daftar kurir aktif di config, bukan hardcode di banyak tempat.
+
+---
+<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

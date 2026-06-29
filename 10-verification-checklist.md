@@ -92,3 +92,6 @@ Hasil:
 ### Setelah verifikasi
 Perbarui dokumen ini → pindahkan temuan ke `01`/`03`, dan tandai versi: "Diverifikasi dengan
 akun X pada tanggal Y (mode sandbox/produksi)". Hapus catatan "tebakan/perlu verifikasi" yang sudah terbukti.
+
+---
+<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

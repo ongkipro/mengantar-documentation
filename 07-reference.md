@@ -112,3 +112,6 @@ Key option WordPress (`wm_*`) + default. Berguna sebagai daftar "pengaturan yang
 | `wm_log_api_requests` | `no` | Log request/response API |
 
 > Saat membangun ulang tanpa WordPress, opsi-opsi ini menjadi **konfigurasi app-mu** (env/DB).
+
+---
+<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

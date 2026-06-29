@@ -190,3 +190,6 @@ Boleh dikosongkan.
 5. **(Jika scheduledPickup)**: `GET /time?address={origin_id}` → pilih `time_id`.
 6. **Create**: `POST /order` dengan `courier` (nama shipment), `pickup`, `orders[]` → simpan `cnote_no` (resi) + `ORDER_ID`.
 7. **Tracking**: `GET /order?order_id=` / `?tracking_id=` untuk update status; tautkan ke halaman tracking Mengantar.
+
+---
+<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

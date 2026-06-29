@@ -166,3 +166,6 @@ Untuk membuat shipment massal via file, kolom minimal per baris:
 | Instruksi Pengiriman | catatan customer (maks 60 char) |
 
 > Multi-origin → tiap origin jadi baris/paket terpisah.
+
+---
+<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

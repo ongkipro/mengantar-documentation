@@ -464,3 +464,6 @@ dipakai sekadar smoke-test, tapi sebaiknya ganti dengan origin/destination milik
 Saat membangun ulang, replikasi caching ini opsional tapi disarankan (hemat kuota & latensi).
 Karena URL mengandung API key, gunakan hash URL **tanpa** menampilkan key di log (plugin
 menyensor key via regex `/api/public/**redacted**`).
+
+---
+<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
