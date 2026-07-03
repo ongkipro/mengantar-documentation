@@ -14,6 +14,7 @@ Use it with any server-capable stack: **Astro**, **Next.js**, Node, Hono, Larave
 ![endpoints](https://img.shields.io/badge/endpoints-18-success)
 ![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![last update](https://img.shields.io/badge/last%20update-2026--07--03-informational)](CHANGELOG.md)
 ![couriers](https://img.shields.io/badge/couriers-JNE%20·%20SiCepat%20·%20J%26T%20·%20Anteraja%20·%20Ninja%20·%20Lion%20·%20IDExpress%20·%20SAP-lightgrey)
 
 </div>
@@ -32,7 +33,7 @@ As an **Official Partner Mengantar**, [ongki.pro](https://ongki.pro) maintains t
 
 > **Language note:** this README is written in English for public discoverability. The detailed integration documents may remain in Indonesian where it is more practical for implementation teams.
 
-**Contents:** [Architecture](#architecture) · [Core flow](#core-flow) · [Endpoints](#endpoints-18-total) · [Repository layout](#repository-layout) · [Where to implement](#where-it-can-be-implemented) · [Docs index](#documentation-index) · [Quick start](#quick-start-after-you-receive-an-api-key) · [Important notes](#important-implementation-notes) · [API access](#api-access-request)
+**Contents:** [Architecture](#architecture) · [Core flow](#core-flow) · [Endpoints](#endpoints-18-total) · [Repository layout](#repository-layout) · [Where to implement](#where-it-can-be-implemented) · [Docs index](#documentation-index) · [Quick start](#quick-start-after-you-receive-an-api-key) · [Important notes](#important-implementation-notes) · [API access](#api-access-request) · [Changelog](#changelog)
 
 ---
 
@@ -238,6 +239,19 @@ After access is granted:
 2. complete the [10-verification-checklist](docs/10-verification-checklist.md)
 3. update the OpenAPI schema if any real responses differ
 4. keep the API key server-side only
+
+---
+
+## Changelog
+
+**Last updated: 2026-07-03.** Recent highlights — full history in [CHANGELOG.md](CHANGELOG.md).
+
+| Date | Change |
+| --- | --- |
+| 2026-07-03 | **Live-verified** against the production API (read-only): base URL confirmed, the two-origin-ID rule fixed across docs & client, `courier=all` returns 14–15 couriers. |
+| 2026-07-03 | **Dev-ready repo:** `docs/` `spec/` `examples/` `scripts/`, AGENTS.md, TypeScript client, Makefile, smoke test, `requests.http`, CI, LICENSE/SECURITY/CONTRIBUTING. |
+| 2026-07-03 | **Aligned with official docs:** 18 endpoints, error codes `X000`–`X003` + `409`, fixed `mm-dd-yyyy` date & `COD_AMOUNT` casing; OpenAPI 3.1 spec. |
+| 2026-06-30 | Initial release: documentation reverse-engineered from the WooCommerce plugin. |
 
 ---
 
