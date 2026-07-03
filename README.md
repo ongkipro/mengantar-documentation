@@ -32,17 +32,19 @@ As an **Official Partner Mengantar**, [ongki.pro](https://ongki.pro) maintains t
 
 > **Language note:** this README is written in English for public discoverability. The detailed integration documents may remain in Indonesian where it is more practical for implementation teams.
 
+**Contents:** [Architecture](#architecture) · [Core flow](#core-flow) · [Endpoints](#endpoints-18-total) · [Repository layout](#repository-layout) · [Where to implement](#where-it-can-be-implemented) · [Docs index](#documentation-index) · [Quick start](#quick-start-after-you-receive-an-api-key) · [Important notes](#important-implementation-notes) · [API access](#api-access-request)
+
 ---
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U[Customer] -->|checkout| FE[Storefront\nAstro / Next.js / Any frontend]
-    FE -->|call your own endpoint| SRV[Secure Server / API route\nAPI key stays here]
-    SRV -->|proxy + cache| MGT[(Mengantar API\napi-public.mengantar.com)]
-    SRV --> DB[(DB: orders & shipments)]
-    JOB[Queue / Cron\ncreate + tracking polling] --> SRV
+    U["Customer"] -->|checkout| FE["Storefront<br/>Astro / Next.js / any frontend"]
+    FE -->|call your own endpoint| SRV["Secure server / API route<br/>API key stays here"]
+    SRV -->|proxy + cache| MGT[("Mengantar API<br/>api-public.mengantar.com")]
+    SRV --> DB[("DB: orders & shipments")]
+    JOB["Queue / Cron<br/>create + tracking polling"] --> SRV
 
     MGT -.->|rates / tracking / status| SRV
     style SRV fill:#fde68a,stroke:#d97706
@@ -192,6 +194,20 @@ curl -sS "$MGT_PREFIX/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destinat
 
 # 2) Search destination → 3) estimate rate → 4) create shipment
 # See docs/09-curl-examples.md for the full sequence, or run: make smoke
+```
+
+### Or use the typed TypeScript client
+
+Server-only, zero-dependency, covers all 18 endpoints ([examples/](examples/README.md)):
+
+```ts
+import { MengantarClient } from "./examples/mengantar-client";
+
+const mgt = new MengantarClient({ apiKey: process.env.MENGANTAR_API_KEY! });
+
+const [dest]   = await mgt.searchAddress("Menteng");
+const originId = await mgt.originWilayah();          // area _id for estimates (= PICKUP_AUTOFILL)
+const rates    = await mgt.estimate({ originId, destinationId: dest._id, courier: "all", weight: 2 });
 ```
 
 ---
