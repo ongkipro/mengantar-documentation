@@ -1,0 +1,20 @@
+{
+  "name": "@ongkipro/mengantar-client",
+  "version": "0.2.0",
+  "description": "Client TypeScript server-only untuk API Mengantar (agregator kurir Indonesia).",
+  "type": "module",
+  "main": "mengantar-client.ts",
+  "types": "mengantar-client.ts",
+  "exports": {
+    ".": "./mengantar-client.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "keywords": ["mengantar", "ongkir", "shipping", "kurir", "indonesia", "logistics"],
+  "license": "MIT",
+  "homepage": "https://ongki.pro",
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

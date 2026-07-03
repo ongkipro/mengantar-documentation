@@ -7,8 +7,9 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | Istilah | Arti |
 |---------|------|
 | **API key** | Token akun Mengantar; ditaruh di path URL `/api/public/{API_KEY}/...`. Rahasia — server-only. |
-| **origin_id** | ID alamat asal/pengirim (gudang) di akun Mengantar. Sumber: `GET /address` → `_id`. |
-| **destination_id** | ID wilayah tujuan (kecamatan/kelurahan). Sumber: `GET /address/search` → `id`. Dipakai sbg `customerAddressDataId`. |
+| **origin_id** (estimate) | ID **wilayah** asal (kecamatan) — same namespace dgn `destination_id`. Sumber: `GET /address/search` → `_id`, atau `PICKUP_AUTOFILL` dari alamat pickup. ⚠️ **BUKAN** `_id` objek alamat pickup. *(live-verified 2026-07-03)* |
+| **destination_id** (estimate) | ID **wilayah** tujuan (kecamatan/kelurahan). Sumber: `GET /address/search` → `_id`. Dipakai juga sbg `customerAddressDataId`. |
+| **pickup address _id** | `_id` objek alamat pickup dari `GET /address`. Dipakai utk `pickup.address_id` (create order) & `GET /time?address=`. Beda dari origin_id estimate. |
 | **courier (estimasi)** | Key kurir di response `/order/estimate` (mis. `jne`, `sicepatcargo`). Banyak varian. |
 | **courier (shipment)** | Nama kurir untuk `POST /order` — 8 nilai resmi (`JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`). |
 | **cnote_no** | Nomor resi / consignment note. Field utama tracking dari response create/track. |
@@ -20,8 +21,13 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | **volume** | Estimasi volume kendaraan jemput: `volumeMotor` / `volumeMobil` / `volumeTruck`. |
 | **kelurahan / kecamatan** | Subdistrict / district — bagian alamat Indonesia (di API: `SUBDISTRICT_NAME` / `DISTRICT_NAME`). |
 | **COD** | Cash on Delivery — penerima bayar saat barang sampai; nilai tagih dikirim di field `COD`. |
-| **3PL** | Third-Party Logistics — varian endpoint estimasi (`/api/order/allEstimate3PL`). |
+| **3PL** | Third-Party Logistics — varian endpoint estimasi (`/api/order/allEstimate3PL`) — harga standar tanpa promo. |
 | **service type** | Kategori layanan kurir: `regular` / `cargo` / `lite` (menentukan batas berat). |
+| **assignee** | User tim dari `GET /my-users` (`_id`); dipasang di `orders.assignee`. |
+| **receiver score** | Skor riwayat penerima per kurir (`GET /getReceiverScoreByNumberUser`) — deteksi risiko RTS. |
+| **courier score** | Skor performa kurir untuk kota (`POST /order/getPerformancePublic`) → `bestCourier` / `recommended`. |
+| **unpaid order** | Order dibuat saat saldo kurang (`cnote_no` kosong); dibayar via `POST /order/pay-unpaid`. |
+| **RTS** | Return to Sender — paket dikembalikan ke pengirim. |
 
 ## 2. Matriks field `POST /order`
 
@@ -65,12 +71,21 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | Konsep | Nilai sah |
 |--------|-----------|
 | Courier (shipment) | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja` |
+| Courier (estimate) param | idem + `all` (**default `JNE`** bila tidak diisi) |
 | Pickup type | `scheduledPickup`, `dropOff` |
 | Volume | `volumeMotor`, `volumeMobil`, `volumeTruck` |
+| Pickup `time` (slot) | `9:00`, `10:00`, `11:00`, `12:00`, `13:00`, `14:00`, `15:00`, `16:00`, `17:00`, `18:00` |
+| Pickup `date` format | **`mm-dd-yyyy`** (bulan-tanggal-tahun, contoh `11-27-2022`) |
 | Service type | `regular` (≤50kg), `cargo` (≤100kg), `lite` (≤0.5kg) |
-| Status shipment (internal) | `created`, `error`, `partial_error`, `pending_pickup_time` |
-| payment_status | `paid`, `unpaid` |
+| Status shipment (sederhana) | `DELIVERED`, `RTS`, selain itu `ON GOING` |
+| Status shipment (internal) | `created`, `error`, `partial_error`, `pending_pickup_time`, `active` |
+| payment_status / isPaid | `paid`/`true`, `unpaid`/`false` |
 | Estimasi mode | `normal` (`/order/estimate`), `3pl`, `public` |
+| `cod` filter (list order) | `COD`, `NON_COD` |
+| `category` (list order) | `collected_customer`, `yet_to_collect`, `need_attention`, `rts`, `pending_pickup`, `redelivery`, `undelivered`, `delivery_problem`, `over_sla`, `already_been_undelivered`, `been_undelivered_wo_ticket`, `been_undelivered_wo_proof` |
+| `ticketFilter` (list order) | `withticket`, `without`, `open`, `replied` |
+| `receiverFilter` (list order) | `1`–`10` |
+| Error code (resmi) | `X000` (param hilang), `X001` (key invalid), `X002` (key salah domain), `X003` (token invalid), `409` (konkurensi batch) |
 
 ## 4. Opsi konfigurasi (dari konstanta plugin)
 
@@ -114,4 +129,4 @@ Key option WordPress (`wm_*`) + default. Berguna sebagai daftar "pengaturan yang
 > Saat membangun ulang tanpa WordPress, opsi-opsi ini menjadi **konfigurasi app-mu** (env/DB).
 
 ---
-<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
+<sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

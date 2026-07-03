@@ -10,10 +10,15 @@ kita; Route Handler memanggil Mengantar. Cocok dengan Next.js App Router + deplo
 MENGANTAR_API_KEY=your_production_key
 MENGANTAR_SANDBOX_KEY=your_sandbox_key
 MENGANTAR_SANDBOX=true
-MENGANTAR_ORIGIN_ID=your_default_origin_id
+MENGANTAR_ORIGIN_WILAYAH_ID=your_pickup_PICKUP_AUTOFILL   # _id WILAYAH asal → untuk estimate
+MENGANTAR_PICKUP_ADDRESS_ID=your_pickup_address__id       # _id alamat pickup → untuk pickup.address_id & /time
 ```
 
 Variabel tanpa prefix `NEXT_PUBLIC_` tidak terekspos ke browser — aman untuk secret.
+
+> ⚠️ **Dua ID berbeda:** estimate `origin_id` = **`_id` wilayah** (ambil dari `PICKUP_AUTOFILL` alamat
+> pickup, atau `/address/search`); sedangkan `pickup.address_id` di create order & `/time?address=` =
+> **`_id` objek alamat pickup** (dari `/address`). Jangan tertukar (live-verified).
 
 ## 2. Client Mengantar (server-only)
 
@@ -76,7 +81,7 @@ export function estimate(opts: {
     courier: opts.courier ?? 'all',
     weight: String(opts.weight ?? 1),
   });
-  if (opts.codAmount && opts.codAmount > 0) q.set('cod_amount', String(opts.codAmount));
+  if (opts.codAmount && opts.codAmount > 0) q.set('COD_AMOUNT', String(opts.codAmount)); // docs resmi: huruf besar
   return request(`/order/estimate?${q.toString()}`);
 }
 
@@ -124,7 +129,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'destination_id wajib' }, { status: 400 });
   }
   const result = await estimate({
-    originId: process.env.MENGANTAR_ORIGIN_ID!,
+    originId: process.env.MENGANTAR_ORIGIN_WILAYAH_ID!,
     destinationId,
     courier: 'all',
     weight,
@@ -159,7 +164,7 @@ import { estimate, createOrder } from '@/lib/mengantar';
 
 export async function getRates(destinationId: string, weight: number) {
   const r = await estimate({
-    originId: process.env.MENGANTAR_ORIGIN_ID!,
+    originId: process.env.MENGANTAR_ORIGIN_WILAYAH_ID!,
     destinationId,
     courier: 'all',
     weight,
@@ -185,7 +190,7 @@ export async function placeShipment(payload: Parameters<typeof createOrder>[0]) 
 ```ts
 await placeShipment({
   courier: 'JNE',
-  pickup: { type: 'scheduledPickup', address_id: process.env.MENGANTAR_ORIGIN_ID!, time_id: 'TIME_ID', volume: 'volumeMobil' },
+  pickup: { type: 'scheduledPickup', address_id: process.env.MENGANTAR_PICKUP_ADDRESS_ID!, time_id: 'TIME_ID', volume: 'volumeMobil' },
   orders: [{
     customerAddressDataId: 'DEST_ID',
     customerAddress: 'Jl. Tujuan No. 5, RT 01 / RW 02, ...',
@@ -202,7 +207,7 @@ await placeShipment({
 
 ## 6. Membaca hasil create order
 
-`POST /order` mengembalikan `data` berupa **array**; resi ada di `cnote_no` (lihat [01-api-reference.md](01-api-reference.md) §5.3):
+`POST /order` mengembalikan `data` berupa **array**; resi ada di `cnote_no` (lihat [01-api-reference.md](01-api-reference.md) §7.5):
 
 ```ts
 const r = await placeShipment(payload);
@@ -228,4 +233,4 @@ const shipment = {
 - Jangan pernah letakkan `MENGANTAR_API_KEY` di komponen client atau `NEXT_PUBLIC_*`.
 
 ---
-<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
+<sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

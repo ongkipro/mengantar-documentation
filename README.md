@@ -10,7 +10,10 @@ Use it with any server-capable stack: **Astro**, **Next.js**, Node, Hono, Larave
 
 [![Official Partner](https://img.shields.io/badge/Mengantar-Official%20Partner-22d3ee?labelColor=0b1220)](https://ongki.pro)
 [![by ongki.pro](https://img.shields.io/badge/by-ongki.pro-34d399?labelColor=0b1220)](https://ongki.pro)
-![scope](https://img.shields.io/badge/scope-REST%20API%20%2B%20workflow%20%2B%20data%20model-success)
+[![CI](https://github.com/ongkipro/mengantar-documentation/actions/workflows/ci.yml/badge.svg)](https://github.com/ongkipro/mengantar-documentation/actions/workflows/ci.yml)
+![endpoints](https://img.shields.io/badge/endpoints-18-success)
+![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![couriers](https://img.shields.io/badge/couriers-JNE%20·%20SiCepat%20·%20J%26T%20·%20Anteraja%20·%20Ninja%20·%20Lion%20·%20IDExpress%20·%20SAP-lightgrey)
 
 </div>
@@ -23,9 +26,11 @@ Mengantar.com is an Indonesian logistics aggregator: one API for multi-courier s
 
 As an **Official Partner Mengantar**, [ongki.pro](https://ongki.pro) maintains this documentation to help teams integrate Mengantar into storefronts, headless commerce projects, and backend systems.
 
-> **API access:** this repository does not provide API keys. To request production/sandbox API access, please contact the official Mengantar platform/team. After you receive an API key, run the smoke tests in [09-curl-examples](09-curl-examples.md) and complete the verification checklist in [10-verification-checklist](10-verification-checklist.md).
+> **Verified:** endpoints, parameters, and response shapes here are matched against the official docs (`app.mengantar.com/docs`) and **verified live against the production API** (read-only, 2026-07-03). Operational behaviour (caching, validation, base URL) is derived from the WooCommerce plugin and marked **[plugin]**.
 
-> **Language note:** this README is written in English for public discoverability. The detailed integration documents in this repository may remain in Indonesian where it is more practical for implementation teams.
+> **API access:** this repository does not provide API keys. To request production/sandbox API access, contact the official Mengantar platform/team. After you receive a key, run the smoke tests in [09-curl-examples](docs/09-curl-examples.md) and complete the [10-verification-checklist](docs/10-verification-checklist.md).
+
+> **Language note:** this README is written in English for public discoverability. The detailed integration documents may remain in Indonesian where it is more practical for implementation teams.
 
 ---
 
@@ -44,7 +49,7 @@ flowchart LR
     style MGT fill:#bfdbfe,stroke:#2563eb
 ```
 
-**Key principle:** the API key must never reach the browser. All calls should go through your server, with GET caching, key redaction in logs, queue/retry for shipment creation, and backoff-based tracking polling.
+**Key principle:** the API key must never reach the browser. All calls go through your server, with GET caching, key redaction in logs, queue/retry for shipment creation, and backoff-based tracking polling.
 
 ---
 
@@ -78,21 +83,55 @@ sequenceDiagram
 
 ---
 
-## Main endpoints
+## Endpoints (18 total)
 
 | Method | Endpoint (`{BASE}/api/public/{KEY}`) | Purpose |
 | --- | --- | --- |
-| GET | `/address/search?keyword=` | Search destination area → `destination_id` |
-| GET | `/address` | List pickup addresses → `origin_id` |
-| POST | `/address` | Create/update pickup address |
-| GET | `/order/estimate?...` | Shipping rate estimate, including `allEstimate3PL` |
+| GET | `/address/search?keyword=` | Search area → `origin_id` / `destination_id` |
+| POST · GET | `/address` | Create/update · list pickup addresses |
+| POST · GET | `/time` | Add · list pickup schedule |
+| GET | `/order/estimate?...` | Shipping rate (single / `all`) |
+| GET | `/api/order/allEstimatePublic` · `…/allEstimate3PL` **(no-key)** | All couriers (flat 20% · 3PL) |
+| POST | `/order/getPerformancePublic` | Courier performance score |
+| GET | `/invoices` | Invoices + balance |
 | POST | `/order` | Create shipment → `cnote_no` + `ORDER_ID` |
-| GET | `/order?order_id=` / `?tracking_id=` | Track order status |
-| GET / POST / DELETE | `/time` | Pickup schedule |
-| GET | `/invoices` | Account invoices |
+| GET | `/my-users` | List assignees |
+| POST | `/order/pay-unpaid` | Pay unpaid orders |
+| GET · DELETE | `/order` | List/track · delete orders |
+| GET · DELETE | `/batch` | List · delete batches |
+| GET | `/getReceiverScoreByNumberUser?search=` | Receiver score (RTS risk) |
 
-**Auth:** API key is placed in the path (`/api/public/{KEY}/...`), not in headers.  
-**Response:** JSON, normally with a `success` field.
+**Auth:** API key is placed in the path (`/api/public/{KEY}/...`), not in headers. **Response:** JSON, normally with a `success` field. Official error codes: `X000`–`X003` + `409` (batch concurrency). Full reference → [01](docs/01-api-reference.md).
+
+---
+
+## Repository layout
+
+```
+.
+├── README.md                 # this file
+├── AGENTS.md  (= CLAUDE.md)   # contract for AI coding agents (integration golden rules)
+├── Makefile                  # terminal entrypoint: make check | client-check | smoke
+├── docs/                     # 01–10 canonical documentation
+├── spec/openapi.yaml         # OpenAPI 3.1 — 18 endpoints (codegen)
+├── examples/                 # server-only TypeScript client + usage & recipes
+├── scripts/                  # check-links.sh (validation) · smoke.sh (read-only API test)
+├── requests.http             # REST-client file (VS Code / JetBrains)
+├── .env.example              # credential template (→ .env)
+└── CONTRIBUTING.md · SECURITY.md · CHANGELOG.md · LICENSE
+```
+
+> **Building on this repo (human or AI)?** Read **[AGENTS.md](AGENTS.md)** first — golden rules
+> (server-only key, `COD_AMOUNT` casing, `mm-dd-yyyy` date, batch concurrency, the two "origin" IDs)
+> and how to keep files in sync. Ready-to-use client: **[examples/](examples/README.md)**.
+
+**Terminal quick commands:**
+```bash
+make help          # list commands
+make check         # validate spec + links + hygiene (offline)
+make client-check  # typecheck the TS client (tsc --strict)
+cp .env.example .env && make smoke   # READ-ONLY smoke test against the API (fill key first)
+```
 
 ---
 
@@ -102,19 +141,19 @@ The API is stack-agnostic. You only need server-side HTTP calls.
 
 | Target | Pattern | Status in this repo |
 | --- | --- | --- |
-| **Astro** + Cloudflare/Node | Server endpoints (`src/pages/api/*`) | Complete example → [05](05-integration-astro.md) |
-| **Next.js** App Router / Vercel | Route Handlers / Server Actions | Complete example → [06](06-integration-nextjs.md) |
-| **Node/Express, Hono, Nest** | Shared `request()` helper | Adapt from 05/06 |
-| **PHP / Laravel, Python / FastAPI, Go** | Port the request helper; keep key server-side | Follow [01](01-api-reference.md) + [04](04-how-it-works.md) |
+| **Astro** + Cloudflare/Node | Server endpoints (`src/pages/api/*`) | Complete example → [05](docs/05-integration-astro.md) |
+| **Next.js** App Router / Vercel | Route Handlers / Server Actions | Complete example → [06](docs/06-integration-nextjs.md) |
+| **Node/Express, Hono, Nest** | Shared `request()` helper | Adapt from 05/06 or use `examples/` |
+| **PHP / Laravel, Python / FastAPI, Go** | Port the request helper; keep key server-side | Follow [01](docs/01-api-reference.md) + [04](docs/04-how-it-works.md) |
 | **Serverless** Cloudflare Workers, Vercel, Lambda | Proxy + cache at edge/function layer | Follow server-only pattern |
-| **Database** Supabase/Postgres/MySQL | Shipments + provenance model | Data model → [03](03-data-model.md) |
-| **Automation** queue/cron | Async create + tracking polling | Flow → [04](04-how-it-works.md) |
-| **Codegen client** | OpenAPI draft | `openapi-mengantar.draft.yaml` pending verification |
+| **Database** Supabase/Postgres/MySQL | Shipments model + SQL schema | Data model → [03](docs/03-data-model.md) §0 |
+| **Automation** queue/cron | Async create + tracking polling | Flow → [04](docs/04-how-it-works.md) |
+| **Codegen client** | OpenAPI 3.1, 18 endpoints | [spec/openapi.yaml](spec/openapi.yaml) · typed TS: `examples/mengantar-client.ts` |
 
 Minimum requirements:
 
 1. call Mengantar only from the server
-2. store `origin_id` and `destination_id`
+2. store `origin_id` (area) and `destination_id`
 3. normalise area names
 4. create shipments via a job/queue
 5. poll tracking status with backoff
@@ -125,17 +164,17 @@ Minimum requirements:
 
 | # | File | Contents |
 | --- | --- | --- |
-| 01 | [api-reference](01-api-reference.md) | REST auth, endpoints, request/response patterns, connection checks, caching |
-| 02 | [couriers-and-rules](02-couriers-and-rules.md) | Courier mapping, weight/COD limits, fees, volumetric rules, pickup |
-| 03 | [data-model](03-data-model.md) | Shipment data dictionary, provenance, metadata, area normalisation, import/export columns |
-| 04 | [how-it-works](04-how-it-works.md) | Architecture and workflow: checkout→rate, order→shipment, origin optimisation, polling, security |
-| 05 | [integration-astro](05-integration-astro.md) | Astro integration with server-only client and endpoints |
-| 06 | [integration-nextjs](06-integration-nextjs.md) | Next.js Route Handlers / Server Actions integration |
-| 07 | [reference](07-reference.md) | Glossary, required/optional fields, enums, configuration matrix |
-| 08 | [error-catalog](08-error-catalog.md) | API/validation/operational errors and handling patterns |
-| 09 | [curl-examples](09-curl-examples.md) | Ready-to-run cURL examples and smoke-test order |
-| 10 | [verification-checklist](10-verification-checklist.md) | Verification steps after API key is available |
-| — | [openapi-mengantar.draft.yaml](openapi-mengantar.draft.yaml) | Draft OpenAPI 3.1 spec for codegen; response schema must be verified |
+| 01 | [api-reference](docs/01-api-reference.md) | REST auth, **18 endpoints** (official docs), request/response, error codes X000–X003, connection checks, caching |
+| 02 | [couriers-and-rules](docs/02-couriers-and-rules.md) | Courier mapping, weight/COD limits, fees, volumetric rules, pickup, batch concurrency |
+| 03 | [data-model](docs/03-data-model.md) | Order object (API) + SQL schema, provenance, metadata, area normalisation, import/export columns |
+| 04 | [how-it-works](docs/04-how-it-works.md) | Architecture and workflow: checkout→rate, order→shipment, origin optimisation, polling, security |
+| 05 | [integration-astro](docs/05-integration-astro.md) | Astro integration with server-only client and endpoints |
+| 06 | [integration-nextjs](docs/06-integration-nextjs.md) | Next.js Route Handlers / Server Actions integration |
+| 07 | [reference](docs/07-reference.md) | Glossary, required/optional fields, enums, configuration matrix |
+| 08 | [error-catalog](docs/08-error-catalog.md) | API/validation/operational errors and handling patterns |
+| 09 | [curl-examples](docs/09-curl-examples.md) | Ready-to-run cURL examples and smoke-test order |
+| 10 | [verification-checklist](docs/10-verification-checklist.md) | Verification steps + what is already confirmed live |
+| — | [spec/openapi.yaml](spec/openapi.yaml) | OpenAPI 3.1 spec — 18 endpoints, matched to official docs |
 
 Recommended reading order: `01 → 02 → 03 → 04`, then choose `05` or `06` based on your stack. Use `07–10` as implementation references.
 
@@ -152,20 +191,22 @@ export MGT_PREFIX="$MGT_BASE/api/public/$MGT_KEY"
 curl -sS "$MGT_PREFIX/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destination_id=5fc62de8f8f44b34aa4bdc58&courier=all&weight=1" | jq .success
 
 # 2) Search destination → 3) estimate rate → 4) create shipment
-# See 09-curl-examples.md for the full sequence.
+# See docs/09-curl-examples.md for the full sequence, or run: make smoke
 ```
 
 ---
 
 ## Important implementation notes
 
-- Tracking number is `cnote_no`, not always `tracking_id`.
-- Create-order response `data` may be an array.
-- Courier names for create-order use Mengantar's official naming, which can differ from estimation keys.
-- COD per item should include item value + proportional shipping + proportional COD fee.
+- Tracking number is `cnote_no` (not `tracking_id`); create-order `data` is an **array**.
+- **Two different "origin" IDs** (live-verified): estimate `origin_id`/`destination_id` are **area `_id`s** (from `/address/search`, or a pickup's `PICKUP_AUTOFILL`) — *not* the pickup-address `_id`. Create-order `pickup.address_id` and `/time?address=` use the **pickup-address `_id`**. Mixing them up returns `success:false`.
+- Courier names for create-order use Mengantar's official casing: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`. Estimate `courier` defaults to `JNE`.
+- `POST /time` uses `date` in **`mm-dd-yyyy`** (not ISO) plus fixed `9:00`–`18:00` slots.
+- **JT Premium / Ninja / SiCepat**: one batch per account — parallel batches return `409 Conflict`.
+- COD estimate param is **`COD_AMOUNT`** (uppercase) = item value + shipping; low balance → order stays **unpaid** (pay via `/order/pay-unpaid`).
 - API area names may not be standardised; normalisation is required.
-- There may be no dedicated key-validation endpoint; use a safe estimate smoke test.
-- Webhook availability must be confirmed; tracking should be designed with polling/backoff.
+- No dedicated key-validation endpoint; use a safe estimate smoke test.
+- Webhook availability is unconfirmed; design tracking with polling/backoff.
 
 ---
 
@@ -173,13 +214,13 @@ curl -sS "$MGT_PREFIX/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destinat
 
 To use this documentation against the real Mengantar API, request access directly from the official Mengantar platform/team.
 
-This repository is documentation and integration guidance only. It does not include or distribute API keys.
+This repository is documentation and integration guidance only. It does not include or distribute API keys — see [SECURITY.md](SECURITY.md) for key handling.
 
 After access is granted:
 
-1. run the smoke tests in [09-curl-examples](09-curl-examples.md)
-2. complete [10-verification-checklist](10-verification-checklist.md)
-3. update the draft OpenAPI schema if any real responses differ
+1. run the smoke tests in [09-curl-examples](docs/09-curl-examples.md) (or `make smoke`)
+2. complete the [10-verification-checklist](docs/10-verification-checklist.md)
+3. update the OpenAPI schema if any real responses differ
 4. keep the API key server-side only
 
 ---
@@ -189,6 +230,8 @@ After access is granted:
 This documentation and toolkit is curated by **[ongki.pro](https://ongki.pro)** — Official Partner Mengantar.
 
 We help teams integrate Mengantar into headless storefronts, ecommerce backends, and automation systems for shipping rates, shipment creation, pickup scheduling, and tracking.
+
+**Governance:** [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) · [LICENSE](LICENSE)
 
 <div align="center">
 

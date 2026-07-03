@@ -1,9 +1,69 @@
 # Data Model & Kamus Data
 
-Bagaimana plugin menyimpan & merepresentasikan data shipment. Berguna saat merancang skema
-database sendiri (mis. tabel `shipments` di Supabase/Postgres) untuk storefront Astro/Next.js.
+Dua lapis: **(A) objek order dari API Mengantar** (docs resmi — dipakai bila kamu membangun DB sendiri),
+dan **(B) cara plugin WooCommerce menyimpannya** (`[plugin]` — referensi porting). Untuk skema DB baru
+(Supabase/Postgres) di storefront Astro/Next.js, mulai dari **§0** (objek API), bukan meta plugin.
 
-## 1. Entri shipment (struktur inti)
+## 0. Objek order dari API (docs resmi)
+
+Bentuk satu order pada response `POST /order` (per elemen `data[]`) dan `GET /order` — **inilah field
+sebenarnya** yang dikembalikan Mengantar. Dikelompokkan agar mudah dipetakan ke kolom DB:
+
+| Grup | Field API |
+|------|-----------|
+| **Identitas** | `_id`, `ORDER_ID`, `cnote_no` (resi), `batch`, `batch_id`, `MERCHANT_ID`, `user_id` |
+| **Status** | `status`, `statusCategory`, `isPaid`, `isDraft`, `isDeleted`, `isArchived`, `lastStatusChange`, `history[]` |
+| **Kurir/layanan** | `courier`*, `plan`, `SERVICE_CODE`, `PICKUP_SERVICE`, `PICKUP_VEHICLE`, `TYPE` (`PICKUP`/…), `zone`, `branch`, `branchOrigin` |
+| **Pickup (origin)** | `PICKUP_NAME`, `PICKUP_PIC`, `PICKUP_PIC_PHONE`, `PICKUP_ADDRESS`, `PICKUP_DISTRICT`, `PICKUP_CITY`, `PICKUP_REGION`, `address_id`, `time_id` |
+| **Pengirim (shipper)** | `SHIPPER_NAME`, `SHIPPER_ADDR1`, `SHIPPER_CITY`, `SHIPPER_ZIP`, `SHIPPER_REGION`, `SHIPPER_COUNTRY`, `SHIPPER_CONTACT`, `SHIPPER_PHONE` |
+| **Penerima (receiver)** | `RECEIVER_NAME`, `RECEIVER_ADDR1`..`ADDR3`, `FULL_RECEIVER_ADDRESS`, `RECEIVER_SUBDISTRICT`, `RECEIVER_DISTRICT`, `RECEIVER_CITY`, `RECEIVER_ZIP`, `RECEIVER_REGION`, `RECEIVER_COUNTRY`, `RECEIVER_CONTACT`, `RECEIVER_PHONE`, `receiver_id` |
+| **Wilayah (kode)** | `ORIGIN_CODE`, `DESTINATION_CODE` |
+| **Paket** | `WEIGHT`, `QTY`, `GOODS_DESC`, `GOODS_AMOUNT` (nilai barang), `INSURANCE_FLAG`, `insuranceamount`, `SPECIAL_INS` (instruksi), `customProductOrderIds[]` |
+| **COD & harga** | `COD_AMOUNT`, `COD_FLAG`, `COD_FEE`, `price`, `estimatedPrice`, `estimatedSpecialPrice`, `discount` |
+| **Skor penerima** | `receiverScore` `{delivered, rts, undelivered, rate}` |
+| **Data kurir** | `sapData` `{origin_branch_code, destination_branch_code, tlc_branch_code, label}` (khusus SAP) |
+| **Waktu** | `createdDate`, `createdAt`, `updatedAt` |
+
+\* `courier` di response = nama shipment (mis. `JNE`). Lihat [02-couriers-and-rules.md](02-couriers-and-rules.md).
+
+### Skema DB minimal yang disarankan (Postgres/Supabase)
+
+Simpan **field mentah penting + JSON blob** untuk audit. Contoh tabel `shipments`:
+
+```sql
+create table shipments (
+  id               uuid primary key default gen_random_uuid(),
+  app_order_id     text not null,                 -- id order di app-mu
+  mgt_order_id     text unique,                   -- ORDER_ID dari Mengantar
+  cnote_no         text,                          -- resi (null bila unpaid/pending)
+  batch_id         text,
+  courier          text not null,                 -- JNE | SiCepat | Sap | ...
+  status           text,                          -- mentah dari API
+  status_simple    text,                          -- DELIVERED | RTS | ON_GOING (turunan)
+  is_paid          boolean default false,
+  cod_amount       integer,                       -- 0 = non-COD
+  price            integer,
+  origin_id        text,                          -- address_id (pickup)
+  destination_id   text,                          -- customerAddressDataId
+  receiver_name    text,
+  receiver_phone   text,
+  receiver_city    text,
+  weight_kg        numeric,
+  raw              jsonb,                          -- simpan objek API penuh utk audit
+  created_at       timestamptz default now(),
+  updated_at       timestamptz default now()
+);
+create index on shipments (app_order_id);
+create index on shipments (mgt_order_id);
+create index on shipments (status_simple);
+```
+
+> **Aturan turunan `status_simple`:** map `status` API → `DELIVERED` / `RTS` / selain itu `ON_GOING`
+> (lihat [01-api-reference.md](01-api-reference.md) §9.2). Tetap simpan `status` mentah + `raw` untuk detail.
+
+---
+
+## 1. Entri shipment (struktur inti) — [plugin]
 
 Plugin menyimpan **array** shipment per order di meta `_wm_mengantar_shipments`. Satu order
 bisa punya banyak shipment (multi-origin / multi-kurir / split paket). Bentuk satu entri:
@@ -168,4 +228,4 @@ Untuk membuat shipment massal via file, kolom minimal per baris:
 > Multi-origin → tiap origin jadi baris/paket terpisah.
 
 ---
-<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
+<sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

@@ -36,9 +36,9 @@ Urutan saat customer mengisi checkout:
    - Bila multi-origin: buat kombinasi (maks 100), ambil rate tiap origin, pilih **kombinasi termurah**
      (`WM_Shipping_Cost_Calculator`). Hasil disimpan di sesi.
 3. **Hitung berat** (aktual, atau volumetrik `P×L×T/divisor` bila diaktifkan; pakai yang lebih besar).
-4. **Estimasi ongkir.** Untuk tiap paket: `check_shipping_fee({origin_id, destination_id, courier, weight, cod_amount})`.
+4. **Estimasi ongkir.** Untuk tiap paket: `check_shipping_fee({origin_id, destination_id, courier, weight, COD_AMOUNT})`.
    - `courier=all` + opsi 3PL → endpoint `/api/order/allEstimate3PL`, selain itu `/order/estimate`.
-   - `cod_amount` hanya dikirim bila metode bayar COD.
+   - `COD_AMOUNT` (docs resmi; huruf besar) hanya dikirim bila metode bayar COD.
 5. **Filter & tampilkan rate.** Buang kurir `unsupported`, `price<=0`, di luar whitelist,
    atau melanggar batas berat/COD. Pakai `estimatedSpecialPrice ?? price`. Tambah fee COD bila perlu.
 6. **Simpan meta** ke shipping line (origin_id, destination_id, kelurahan, kecamatan, package_items)
@@ -145,4 +145,4 @@ Operasi tulis di admin dijaga `nonce` (anti-CSRF) + cek hak akses (`manage_wooco
 - **Normalisasi wilayah**: nama provinsi/kota dari API tidak standar — petakan dulu.
 
 ---
-<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
+<sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

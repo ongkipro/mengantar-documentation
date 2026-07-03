@@ -1,0 +1,109 @@
+### Mengantar API — REST client file
+# Kompatibel dengan VS Code REST Client, JetBrains HTTP Client, dan editor sejenis.
+# Isi variabel di bawah (atau pakai file env editor-mu). @key RAHASIA — jangan commit nilai asli.
+# Endpoint TULIS ditandai [WRITE] — jalankan hanya di sandbox.
+
+@base = https://api-public.mengantar.com
+@key = GANTI_DENGAN_API_KEY
+@prefix = {{base}}/api/public/{{key}}
+
+# Isi setelah menjalankan request pencarian/list di bawah:
+@originId = ORIGIN_ID
+@destId = DEST_ID
+@timeId = TIME_ID
+@batchId = BATCH_ID
+
+### 1. Validasi key (estimate dummy)
+GET {{prefix}}/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destination_id=5fc62de8f8f44b34aa4bdc58&courier=all&weight=1
+
+### 2. Cari data wilayah → ambil data[]._id
+GET {{prefix}}/address/search?keyword=menteng
+
+### 3. List alamat pickup (origin) → ambil data[]._id
+GET {{prefix}}/address
+
+### 4. [WRITE] Buat / update alamat pickup
+POST {{prefix}}/address
+Content-Type: application/x-www-form-urlencoded
+
+PICKUP_AUTOFILL={{destId}}&PICKUP_ADDRESS=Jl. Contoh No. 1&PICKUP_PIC_PHONE=08123456789&PICKUP_PIC=Budi&PICKUP_NAME=Gudang Utama
+
+### 5. List jadwal pickup
+GET {{prefix}}/time?address={{originId}}
+
+### 6. [WRITE] Tambah jadwal pickup — date = mm-dd-yyyy, time = 9:00..18:00
+POST {{prefix}}/time
+Content-Type: application/x-www-form-urlencoded
+
+address_id={{originId}}&date=07-10-2026&time=13:00
+
+### 7. Estimasi ongkir (semua kurir)
+GET {{prefix}}/order/estimate?origin_id={{originId}}&destination_id={{destId}}&courier=all&weight=2
+
+### 8. Estimasi + COD (COD_AMOUNT huruf besar)
+GET {{prefix}}/order/estimate?origin_id={{originId}}&destination_id={{destId}}&courier=JNE&weight=2&COD_AMOUNT=150000
+
+### 9. Estimasi public (flat 20%) — TANPA prefix key
+GET {{base}}/api/order/allEstimatePublic?origin_id={{originId}}&destination_id={{destId}}&weight=2
+
+### 10. Estimasi 3PL (harga standar) — TANPA prefix key
+GET {{base}}/api/order/allEstimate3PL?origin_id={{originId}}&destination_id={{destId}}&weight=2
+
+### 11. Skor performa kurir (kirim allEstimateData dari #7)
+POST {{prefix}}/order/getPerformancePublic
+Content-Type: application/json
+Accept: application/json
+
+{ "city": "JAKARTA PUSAT", "allEstimateData": {} }
+
+### 12. Invoice & saldo
+GET {{prefix}}/invoices
+
+### 13. Assignee (untuk orders.assignee)
+GET {{prefix}}/my-users
+
+### 14. [WRITE] Buat shipment — resi di data[].cnote_no. JT/Ninja/SiCepat: jangan paralel!
+POST {{prefix}}/order
+Content-Type: application/json
+Accept: application/json
+
+{
+  "courier": "JNE",
+  "pickup": { "type": "scheduledPickup", "address_id": "{{originId}}", "time_id": "{{timeId}}", "volume": "volumeMobil" },
+  "orders": [{
+    "customerAddressDataId": "{{destId}}",
+    "customerAddress": "Jl. Tujuan No. 5, Bandung, Jawa Barat 40123",
+    "customerName": "Siti", "customerPhone": "08111111111",
+    "parcelContent": "Kaos katun", "weight": 2, "quantity": 1, "goodsValue": 150000
+  }]
+}
+
+### 15. [WRITE] Bayar order unpaid
+POST {{prefix}}/order/pay-unpaid
+Content-Type: application/x-www-form-urlencoded
+
+courier=JNE&batch_id={{batchId}}
+
+### 16. Lacak order by order_id
+GET {{prefix}}/order?order_id=ORDER_ID
+
+### 17. List order (filter)
+GET {{prefix}}/order?page=1&size=50&courier=JNE&cod=NON_COD&category=collected_customer
+
+### 18. [WRITE] Hapus order
+DELETE {{prefix}}/order
+Content-Type: application/x-www-form-urlencoded
+
+courier=JNE&ids=["ORDER_OBJECT_ID"]
+
+### 19. List batch
+GET {{prefix}}/batch?page=1&size=50&courier=JNE
+
+### 20. [WRITE] Hapus batch
+DELETE {{prefix}}/batch
+Content-Type: application/x-www-form-urlencoded
+
+courier=JNE&id={{batchId}}
+
+### 21. Skor penerima (cek risiko RTS sebelum COD)
+GET {{prefix}}/getReceiverScoreByNumberUser?search=8123456789

@@ -1,0 +1,17 @@
+# Kredensial — JANGAN pernah commit
+.env
+.env.*
+*.key
+secrets*.json
+mengantar-key*.txt
+
+# Output smoke-test (boleh berisi data pribadi/redaksi)
+smoke-*.json
+docs/**/*.response.json
+
+# Tooling
+node_modules/
+dist/
+.DS_Store
+*.log
+/tmp/

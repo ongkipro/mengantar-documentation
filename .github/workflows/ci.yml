@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python (untuk validasi OpenAPI + link)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install pyyaml
+
+      - name: Cek spec + link + higiene kredensial
+        run: bash scripts/check-links.sh
+
+      - name: Setup Node (typecheck client)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Typecheck client TypeScript
+        run: npx -y -p typescript tsc -p examples/tsconfig.json && echo "client OK"

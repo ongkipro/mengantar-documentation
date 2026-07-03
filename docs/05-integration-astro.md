@@ -12,10 +12,15 @@ Asumsi: Astro mode `server` / `hybrid` (output endpoints), atau adapter Cloudfla
 MENGANTAR_API_KEY=your_production_key
 MENGANTAR_SANDBOX_KEY=your_sandbox_key
 MENGANTAR_SANDBOX=true
-MENGANTAR_ORIGIN_ID=your_default_origin_id
+MENGANTAR_ORIGIN_WILAYAH_ID=your_pickup_PICKUP_AUTOFILL   # _id WILAYAH asal → untuk estimate
+MENGANTAR_PICKUP_ADDRESS_ID=your_pickup_address__id       # _id alamat pickup → untuk pickup.address_id & /time
 ```
 
 > Di Astro, variabel tanpa prefix `PUBLIC_` hanya tersedia di server (`import.meta.env`). Bagus untuk secret.
+
+> ⚠️ **Dua ID berbeda:** estimate `origin_id` = **`_id` wilayah** (dari `PICKUP_AUTOFILL` alamat pickup,
+> atau `/address/search`); `pickup.address_id` di create order & `/time?address=` = **`_id` objek alamat
+> pickup** (dari `/address`). Jangan tertukar (live-verified).
 
 ## 2. Client Mengantar (server-only)
 
@@ -73,7 +78,7 @@ export function estimate(opts: {
     courier: opts.courier ?? 'all',
     weight: String(opts.weight ?? 1),
   });
-  if (opts.codAmount && opts.codAmount > 0) q.set('cod_amount', String(opts.codAmount));
+  if (opts.codAmount && opts.codAmount > 0) q.set('COD_AMOUNT', String(opts.codAmount)); // docs resmi: huruf besar
   return request(`/order/estimate?${q.toString()}`);
 }
 
@@ -125,7 +130,7 @@ export const GET: APIRoute = async ({ url }) => {
     return Response.json({ error: 'destination_id wajib' }, { status: 400 });
   }
   const result = await estimate({
-    originId: import.meta.env.MENGANTAR_ORIGIN_ID,
+    originId: import.meta.env.MENGANTAR_ORIGIN_WILAYAH_ID,
     destinationId,
     courier: 'all',
     weight,
@@ -175,7 +180,7 @@ const list = Object.entries(rates)
 
 ## 5. Membaca hasil create order
 
-Response `POST /order` punya `data` berupa **array** (lihat [01-api-reference.md](01-api-reference.md) §5.3).
+Response `POST /order` punya `data` berupa **array** (lihat [01-api-reference.md](01-api-reference.md) §7.5).
 Ambil resi dari `cnote_no`, bukan `tracking_id`:
 
 ```ts
@@ -206,4 +211,4 @@ const shipment = {
 - Untuk store besar, simpan `origin_id` & daftar kurir aktif di config, bukan hardcode di banyak tempat.
 
 ---
-<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
+<sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

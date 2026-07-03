@@ -94,7 +94,8 @@ Berat minimum yang dikirim ke API: **1 kg** (di-clamp `max(1, weight)`).
 ### Aturan tambahan COD
 - **SAP Cargo tidak mendukung COD** → di-skip saat metode bayar = COD.
 - Saat memilih rate untuk order COD, plugin mengirim `cod_amount` = nilai isi keranjang.
-- Rate di-skip bila `cod_amount` di luar rentang min–max kurir.
+  (Docs resmi menamai param ini **`COD_AMOUNT`** huruf besar — pakai casing itu untuk implementasi baru.)
+- Rate di-skip bila COD di luar rentang min–max kurir.
 
 ---
 
@@ -165,11 +166,31 @@ Nilai enum di atas dikonfirmasi dari dropdown setting plugin (Scheduled Pickup /
 mengambil paket. Plugin hanya mengirimnya bila terisi (mis. dari kolom `Assignee` saat import).
 Boleh dikosongkan.
 
-- `scheduledPickup` butuh `time_id` (jadwal dari endpoint `/time`).
+- `scheduledPickup` butuh `time_id` (jadwal dari endpoint `/time`) **dan** `volume`.
 - `dropOff` tidak butuh jadwal.
 - Jadwal pickup minimal **2 jam ke depan** (`WM_PICKUP_TIME_HORIZON_SECONDS = 7200`).
 - Auto-schedule: bila tidak ada jadwal cocok, plugin bisa otomatis `POST /time` membuat slot baru,
   atau menandai shipment `pending_pickup_time` untuk dipilih manual (lihat [04-how-it-works.md](04-how-it-works.md)).
+
+**Format saat `POST /time` (docs resmi):**
+- `date` = **`mm-dd-yyyy`** (bulan-tanggal-tahun; contoh `11-27-2022`) — **bukan** ISO `YYYY-MM-DD`.
+- `time` = salah satu slot tetap: `9:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00, 18:00`.
+
+## 7b. Konkurensi batch (JT Premium, Ninja, SiCepat)
+
+Untuk kurir yang resinya (`cnote_no`) di-generate di sisi Mengantar — **JT Premium, Ninja, SiCepat** —
+nomor diberi berurutan per akun, jadi **hanya satu batch boleh diproses dalam satu waktu per akun**.
+
+- **Jangan** kirim beberapa request `POST /order` bersamaan (paralel) untuk kurir ini.
+- Gabungkan semua order ke **satu batch / satu request**.
+- Request konkuren (JT Premium) → **HTTP `409 Conflict`** (lihat [08-error-catalog.md](08-error-catalog.md) §A).
+
+## 7c. `customProducts` (rincian produk manual)
+
+Field `orders.customProducts[]` di `POST /order` **saat ini hanya didukung untuk `JNE`, `SiCepat`, `Sap`, `JNT`**.
+Bila diisi: `orders.weight` harus = Σ(qty × weight) dan `orders.quantity` = Σ(qty) semua item
+(mengikuti logika daftar produk in-app). Alias field diterima: `qty`←`quantity`/`orderQuantity`,
+`price`←`harga`/`regularPrice`.
 
 ---
 
@@ -192,4 +213,4 @@ Boleh dikosongkan.
 7. **Tracking**: `GET /order?order_id=` / `?tracking_id=` untuk update status; tautkan ke halaman tracking Mengantar.
 
 ---
-<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
+<sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

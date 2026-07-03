@@ -1,10 +1,41 @@
 # Checklist Verifikasi (saat API key tersedia)
 
-Hal-hal yang **belum bisa dipastikan dari kode plugin** dan harus dikonfirmasi dengan akun/sandbox.
-Jalankan cURL di [09-curl-examples.md](09-curl-examples.md), tempel response apa adanya, lalu
-perbarui [01-api-reference.md](01-api-reference.md) / [03-data-model.md](03-data-model.md).
+Hal-hal yang harus dikonfirmasi dengan akun/sandbox. Jalankan cURL di
+[09-curl-examples.md](09-curl-examples.md), tempel response apa adanya, lalu perbarui
+[01-api-reference.md](01-api-reference.md) / [03-data-model.md](03-data-model.md).
 
 > Cara pakai: centang `[x]` bila sudah diverifikasi, isi blok "Hasil" dengan JSON nyata (redaksi data pribadi).
+
+## 0. Sudah dikonfirmasi via docs resmi ✅
+
+Dicocokkan dengan `app.mengantar.com/docs` — **tidak perlu** diverifikasi ulang (kecuali ingin cek nilai nyata):
+
+- ✅ Daftar endpoint (18) + method + parameter — lihat [01](01-api-reference.md) §2.
+- ✅ Kode error resmi: `X000`, `X001`, `X002`, `X003` + `409 Conflict` (konkurensi batch).
+- ✅ `POST /time`: `date` = **`mm-dd-yyyy`**, `time` = slot `9:00`–`18:00`.
+- ✅ `courier` param estimate default = `JNE`; nilai `all` → map per kurir.
+- ✅ `COD_AMOUNT` (huruf besar) = Nilai Barang + Ongkir; matriks `unsupported`/`unsupported_cod`.
+- ✅ `customProducts` hanya JNE/SiCepat/Sap/JNT; aturan Σweight & Σqty.
+- ✅ Saldo kurang → order unpaid → `POST /order/pay-unpaid`.
+
+**Masih perlu akun asli:** rate limit, webhook, stabilitas `destination_id` lintas waktu, perilaku create-order nyata.
+
+## 0b. Diverifikasi LIVE ✅ (2026-07-03, akun produksi read-only)
+
+Smoke-test `make smoke` dengan key `API-…` nyata:
+
+- ✅ **Base URL produksi** `https://api-public.mengantar.com` — **bekerja** (bukan lagi asumsi plugin).
+- ✅ Format key: `API-XXXXXXXXXXXXXXXX`. Key valid → estimate dummy `success:true`.
+- ✅ **`estimate.origin_id`/`destination_id` = `_id` WILAYAH** (dari `/address/search`), **bukan** `_id` alamat
+  pickup. Memakai pickup `_id` → `success:false`. Origin asal = `PICKUP_AUTOFILL` alamat pickup.
+- ✅ `estimate?courier=all` mengembalikan **~14–15 key kurir** (JNE, JNECargo, JT, Ninja, SAP, SAPLite,
+  SapCargo, SiCepat, SiCepatCargo, anteraja, iDexpress, iDexpressCargo, lion, paxel, pos).
+- ✅ `/address/search`, `/address`, `/invoices` (ada `count` & `balance`), `/my-users` (`_id,name,email,…`),
+  `/batch`, `/order` (list) — semua `success:true`. Order record punya `FULL_RECEIVER_ADDRESS`.
+- ✅ `/time?address=<pickup _id>` `success:true` (pakai `_id` objek alamat pickup, bukan wilayah).
+
+**Belum diuji (butuh tulis/sandbox):** `POST /order` nyata, `pay-unpaid`, `DELETE /order|batch`,
+`DELETE /time` (plugin-only), konkurensi `409`.
 
 ## 1. Kredensial & lingkungan
 - [ ] Dapatkan **API key produksi**.
@@ -94,4 +125,4 @@ Perbarui dokumen ini → pindahkan temuan ke `01`/`03`, dan tandai versi: "Diver
 akun X pada tanggal Y (mode sandbox/produksi)". Hapus catatan "tebakan/perlu verifikasi" yang sudah terbukti.
 
 ---
-<sub>Bagian dari <a href="README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
+<sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
