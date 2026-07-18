@@ -4,6 +4,18 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu 
 
 ## [Unreleased]
 
+### Verified (live, produksi 2026-07-19 — integrasi Formalin)
+- Base URL `https://api-public.mengantar.com` **dikonfirmasi ulang bekerja live** (upgrade tanda `[plugin]`
+  → live-verified di `docs/01` §1).
+- `GET /order/estimate?courier=all` mengembalikan `data` sebagai **objek/map di-key nama kurir**
+  (bukan array); tiap value = objek rate (`price`, `estimatedPrice`, `estimatedSpecialPrice`,
+  `unsupported`, `unsupported_cod`, …). Bentuk ini ditulis eksplisit di `docs/01` §5.1.
+- **Gotcha:** response `/order/estimate` **tidak punya field ETD/durasi** — hanya harga; konsumen
+  menyediakan label waktu antar sendiri. Didokumentasikan di `docs/01` §5.1 & `docs/10` §0c.
+- Di-affirm ulang: `estimatedSpecialPrice` = harga diskon (volume akun) vs `estimatedPrice` = standar;
+  field `/address/search` (`_id`, `*_NAME`, `ZIP_CODE`, `DESTINATION_CODE`); aturan dua "origin" ID.
+- Detail: `docs/10` §0c.
+
 ### Verified (live, akun produksi read-only 2026-07-03)
 - Base URL `https://api-public.mengantar.com` **terbukti bekerja**; format key `API-…`.
 - **Fixed (bug toolkit):** estimate `origin_id`/`destination_id` = **`_id` WILAYAH** (dari `/address/search`,

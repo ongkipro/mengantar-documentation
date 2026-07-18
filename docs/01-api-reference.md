@@ -19,11 +19,13 @@ Endpoint utama memakai pola **API key di dalam path**:
 
 | Mode | Base URL | Sumber |
 |------|----------|--------|
-| Produksi | `https://api-public.mengantar.com` | **[plugin]** |
+| Produksi | `https://api-public.mengantar.com` | **Live-verified 2026-07-19** |
 | Sandbox  | `https://sandbox.mengantar.com` | **[plugin]** |
 
-> Docs resmi memakai placeholder `{BASE_URL}` tanpa menyebut host konkret; host di atas berasal
-> dari plugin. **Konfirmasi base URL final** dengan tim Mengantar saat menerima API key ([verifikasi]).
+> **Base URL produksi `https://api-public.mengantar.com` terbukti bekerja live** — dikonfirmasi ulang
+> saat integrasi produksi 2026-07-19 (sebelumnya 2026-07-03), bukan lagi asumsi plugin. Docs resmi tetap
+> memakai placeholder `{BASE_URL}` tanpa host konkret, jadi tetap **konfirmasikan host final** dengan tim
+> Mengantar untuk pemakaian jangka panjang. Host **sandbox** masih berasal dari plugin ([verifikasi]).
 
 **Penting:** karena key ada di URL, **JANGAN** panggil API ini dari kode browser/klien.
 Selalu proxy lewat server (Astro endpoint / Next.js route handler) supaya key tidak bocor.
@@ -124,6 +126,9 @@ Menghasilkan kode origin & destination. `{API_KEY}` tidak divalidasi di route in
 - `_id` → dipakai sebagai `origin_id`, `destination_id`, dan `customerAddressDataId`.
 - Field `*_SI` / `CODE_SAP` adalah kode internal per kurir (SiCepat / SAP).
 
+> *Live-verified 2026-07-19:* tiap record memuat `_id`, `COUNTRY_NAME`, `PROVINCE_NAME`, `CITY_NAME`,
+> `DISTRICT_NAME`, `SUBDISTRICT_NAME`, `ZIP_CODE`, `DESTINATION_CODE` (plus field internal kurir di atas).
+
 ### 3.2 Tambah / update alamat pickup — `POST /address`
 
 Ambil dulu data wilayah dari `GET /address/search`, lalu kirim `_id`-nya sebagai `PICKUP_AUTOFILL`.
@@ -213,14 +218,14 @@ curl -X GET '{BASE_URL}/api/public/{API_KEY}/order/estimate' \
 |-------|------|------------|
 | `origin_id` | String | **`_id` WILAYAH** (kecamatan) dari `/address/search`, **atau** `PICKUP_AUTOFILL` dari alamat pickup |
 | `destination_id` | String | **`_id` WILAYAH** dari `/address/search` |
-| `courier` | String | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`, atau `all`. **Default `JNE`.** `all` → array/map per kurir |
+| `courier` | String | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`, atau `all`. **Default `JNE`.** `all` → **objek/map di-key nama kurir** (bukan array) |
 | `weight` | Number | Default `1`, satuan **kg** |
 | `COD_AMOUNT` | Number | *(opsional)* COD = Nilai Barang + Ongkir. Dipakai menghitung `codFee` |
 
 > ⚠️ **`origin_id`/`destination_id` di estimate = `_id` WILAYAH** (kecamatan, dari `/address/search`) —
 > **bukan** `_id` objek alamat pickup dari `GET /address`. Untuk asal, ambil `PICKUP_AUTOFILL` dari alamat
 > pickup-mu (itu memang `_id` wilayah). Sebaliknya, `pickup.address_id` di create order (§7.2) & `/time?address=`
-> memakai **`_id` objek alamat pickup**. *(Live-verified 2026-07-03: pakai pickup `_id` di estimate → `success:false`.)*
+> memakai **`_id` objek alamat pickup**. *(Live-verified 2026-07-03, re-affirmed 2026-07-19: pakai pickup `_id` di estimate → `success:false`.)*
 
 **Response (single kurir):**
 ```json
@@ -241,9 +246,34 @@ curl -X GET '{BASE_URL}/api/public/{API_KEY}/order/estimate' \
 }
 ```
 
-- `estimatedPrice` = harga akhir; `estimatedSpecialPrice` = harga setelah diskon.
-- **Diskon berbasis volume pengiriman akun** (lihat *Diskon Ongkos Kirim*) — berbeda dari
-  `/allEstimatePublic` yang selalu diskon flat 20%.
+- `estimatedPrice` = harga standar/akhir; `estimatedSpecialPrice` = harga **setelah diskon** (diskon
+  berbasis **volume pengiriman akun** — lihat *Diskon Ongkos Kirim*). *(Live-verified 2026-07-19.)*
+  Berbeda dari `/allEstimatePublic` yang selalu diskon flat 20%.
+
+**Response (`courier=all`):** `data` adalah **objek/map yang di-key nama kurir**, **bukan array**
+*(Live-verified 2026-07-19)*. Tiap value = objek rate yang sama seperti single-kurir
+(`price`, `estimatedPrice`, `estimatedSpecialPrice`, `unsupported`, `unsupported_cod`, dst).
+
+```json
+{
+  "success": true,
+  "data": {
+    "JNE":         { "estimatedPrice": 12000, "estimatedSpecialPrice": 12000, "unsupported": false, "unsupported_cod": false },
+    "SAPLite":     { "estimatedPrice": 8400,  "estimatedSpecialPrice": 8050,  "unsupported": false, "unsupported_cod": false },
+    "iDexpress":   { "estimatedPrice": 10000, "estimatedSpecialPrice": 10000, "unsupported": false, "unsupported_cod": false }
+  }
+}
+```
+
+Key yang muncul mengikuti kurir + varian yang aktif untuk akun, mis. `JNE`, `JNECargo`, `SiCepat`,
+`SiCepatCargo`, `SAP`, `SAPLite`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja` (contoh nyata quote
+Jakarta→Bandung 1 kg: `SAPLite.estimatedSpecialPrice` ≈ 8050, `iDexpress.estimatedPrice` ≈ 10000,
+`JNE.estimatedPrice` 12000). Iterasi dengan `Object.entries(data)`, bukan `data.map(...)`.
+
+> ⚠️ **Tidak ada field ETD / durasi** di response `/order/estimate` (single maupun `all`) — **hanya harga**
+> *(Live-verified 2026-07-19; gotcha umum integrasi)*. Konsumen harus menyediakan label estimasi waktu
+> antar sendiri. Field `estimatedDate`/`estimate_delivery` hanya muncul di `/allEstimatePublic` &
+> `/allEstimate3PL` (§5.2, §5.3), **bukan** di `/order/estimate`.
 
 **Matriks `unsupported` × `unsupported_cod`:**
 

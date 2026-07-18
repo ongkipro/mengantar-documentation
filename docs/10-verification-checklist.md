@@ -37,6 +37,23 @@ Smoke-test `make smoke` dengan key `API-…` nyata:
 **Belum diuji (butuh tulis/sandbox):** `POST /order` nyata, `pay-unpaid`, `DELETE /order|batch`,
 `DELETE /time` (plugin-only), konkurensi `409`.
 
+## 0c. Re-verifikasi LIVE ✅ (2026-07-19, produksi — integrasi Formalin)
+
+Dikonfirmasi ulang langsung terhadap API produksi saat membangun integrasi live:
+
+- ✅ **Base URL produksi** `https://api-public.mengantar.com` — masih bekerja live (bukan asumsi plugin).
+- ✅ `GET /order/estimate?courier=all` → `data` adalah **objek/map di-key nama kurir** (`JNE`, `SAPLite`,
+  `iDexpress`, dst), **bukan array**. Tiap value = `{ price, estimatedPrice, estimatedSpecialPrice,
+  unsupported, unsupported_cod, … }`. Contoh Jakarta→Bandung 1 kg: `SAPLite.estimatedSpecialPrice` ≈ 8050,
+  `iDexpress.estimatedPrice` ≈ 10000, `JNE.estimatedPrice` 12000.
+- ✅ **Tidak ada field ETD/durasi** di response `/order/estimate` — hanya harga; label estimasi waktu antar
+  harus disediakan konsumen. (`estimatedDate`/`estimate_delivery` hanya ada di `/allEstimate*`.)
+- ✅ `estimatedSpecialPrice` = harga diskon (berbasis volume akun); `estimatedPrice` = harga standar/akhir.
+- ✅ `GET /address/search` record memuat `_id`, `COUNTRY_NAME`, `PROVINCE_NAME`, `CITY_NAME`,
+  `DISTRICT_NAME`, `SUBDISTRICT_NAME`, `ZIP_CODE`, `DESTINATION_CODE`.
+- ✅ Aturan dua "origin" ID di-affirm ulang: `estimate.origin_id`/`destination_id` = `_id` WILAYAH dari
+  `/address/search`, **bukan** `_id` objek alamat pickup.
+
 ## 1. Kredensial & lingkungan
 - [ ] Dapatkan **API key produksi**.
 - [ ] Dapatkan **sandbox key** + konfirmasi host `https://sandbox.mengantar.com` aktif.
