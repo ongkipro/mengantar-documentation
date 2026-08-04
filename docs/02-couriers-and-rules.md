@@ -194,11 +194,15 @@ Bila diisi: `orders.weight` harus = Σ(qty × weight) dan `orders.quantity` = Σ
 
 ---
 
-## 8. Mode sandbox
+## 8. Mode sandbox & Limitasi
 
 - Aktif bila opsi `wm_sandbox_mode = yes` **dan** sandbox API key terisi.
 - Saat aktif: base URL → `https://sandbox.mengantar.com`, dan key produksi diganti sandbox key.
 - Gunakan sandbox untuk semua testing create-order agar tidak membuat shipment asli.
+
+> ⚠️ **Sandbox Traps (Penting):** Lingkungan Sandbox Mengantar memiliki batasan keras yang sering disangka sebagai bug integrasi. Jangan buang waktu debugging hal berikut:
+> 1. **JNE:** Titik origin *wajib* dari Jakarta. (Akan error `Content not confirm our security Policy` jika dari kota lain).
+> 2. **SAP:** Hanya mengizinkan order Non-COD dengan rute Jakarta → Jakarta. (Akan error `Service tidak ditemukan dalam kontrak`).
 
 ---
 

@@ -46,6 +46,7 @@ karena tidak divalidasi pada route ini (bagian dari legacy system) — tapi stru
 
 - `GET` & `POST` form: tanpa header khusus (form `application/x-www-form-urlencoded` atau `multipart` via `-F`).
 - `POST` JSON (`getPerformancePublic`): `Content-Type: application/json`, `Accept: application/json`.
+- `x-client-source: woocommerce`: **Wajib disertakan** jika request berasal dari plugin WooCommerce. (Abaikan atau isi `directCall` untuk integrasi custom SaaS).
 - `POST /order` di docs resmi memakai form (`-F`); plugin mengirim JSON. Keduanya diterima ([verifikasi]).
 
 ### Amplop response
