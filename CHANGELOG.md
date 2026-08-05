@@ -4,6 +4,11 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu 
 
 ## [Unreleased]
 
+### Audited (2026-08-05 — Sandbox & Architecture Constraints)
+- **Sandbox Limits:** Documented strict limitations for JNE (Jakarta origin only) and SAP (Jakarta → Jakarta Non-COD only) to prevent developer confusion.
+- **Client Validation:** Documented the required `x-client-source: woocommerce` header for payload sources originating from WooCommerce.
+- Reflected these updates into `docs/01-api-reference.md`, `docs/02-couriers-and-rules.md`, and `README.md`.
+
 ### Verified (live, produksi 2026-07-19 — integrasi Formalin)
 - Base URL `https://api-public.mengantar.com` **dikonfirmasi ulang bekerja live** (upgrade tanda `[plugin]`
   → live-verified di `docs/01` §1).

@@ -14,7 +14,7 @@ Use it with any server-capable stack: **Astro**, **Next.js**, Node, Hono, Larave
 ![endpoints](https://img.shields.io/badge/endpoints-18-success)
 ![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![last update](https://img.shields.io/badge/last%20update-2026--07--19-informational)](CHANGELOG.md)
+[![last update](https://img.shields.io/badge/last%20update-2026--08--05-informational)](CHANGELOG.md)
 ![couriers](https://img.shields.io/badge/couriers-JNE%20·%20SiCepat%20·%20J%26T%20·%20Anteraja%20·%20Ninja%20·%20Lion%20·%20IDExpress%20·%20SAP-lightgrey)
 
 </div>
@@ -27,7 +27,7 @@ Mengantar.com is an Indonesian logistics aggregator: one API for multi-courier s
 
 As an **Official Partner Mengantar**, [ongki.pro](https://ongki.pro) maintains this documentation to help teams integrate Mengantar into storefronts, headless commerce projects, and backend systems.
 
-> **Verified:** endpoints, parameters, and response shapes here are matched against the official docs (`app.mengantar.com/docs`) and **verified live against the production API** (read-only, 2026-07-03; **re-verified 2026-07-19** during a live integration — base URL, `courier=all` per-courier map, no ETD field). Operational behaviour (caching, validation) is derived from the WooCommerce plugin and marked **[plugin]**.
+> **Verified:** endpoints, parameters, and response shapes here are matched against the official docs (`app.mengantar.com/docs`) and **verified live against the production API** (read-only, 2026-07-03; **re-verified 2026-07-19** during a live integration — base URL, `courier=all` per-courier map, no ETD field). Recent **2026-08-05 audit** introduced strict Sandbox limits mapping and WooCommerce origin validation rules. Operational behaviour (caching, validation) is derived from the WooCommerce plugin and marked **[plugin]**.
 
 > **API access:** this repository does not provide API keys. To request production/sandbox API access, contact the official Mengantar platform/team. After you receive a key, run the smoke tests in [09-curl-examples](docs/09-curl-examples.md) and complete the [10-verification-checklist](docs/10-verification-checklist.md).
 
@@ -222,6 +222,8 @@ const rates    = await mgt.estimate({ originId, destinationId: dest._id, courier
 - `POST /time` uses `date` in **`mm-dd-yyyy`** (not ISO) plus fixed `9:00`–`18:00` slots.
 - **JT Premium / Ninja / SiCepat**: one batch per account — parallel batches return `409 Conflict`.
 - COD estimate param is **`COD_AMOUNT`** (uppercase) = item value + shipping; low balance → order stays **unpaid** (pay via `/order/pay-unpaid`).
+- **Sandbox Traps (Critical):** JNE will strictly fail `POST /order` if the origin is outside Jakarta (`Content not confirm our security Policy`). SAP Sandbox blocks COD entirely and restricts routes to Jakarta → Jakarta only. Do not confuse this with a bug in your code.
+- API requests arriving from WooCommerce origins **must** include the header `x-client-source: woocommerce`.
 - API area names may not be standardised; normalisation is required.
 - No dedicated key-validation endpoint; use a safe estimate smoke test.
 - Webhook availability is unconfirmed; design tracking with polling/backoff.
@@ -245,10 +247,11 @@ After access is granted:
 
 ## Changelog
 
-**Last updated: 2026-07-19.** Recent highlights — full history in [CHANGELOG.md](CHANGELOG.md).
+**Last updated: 2026-08-05.** Recent highlights — full history in [CHANGELOG.md](CHANGELOG.md).
 
 | Date | Change |
 | --- | --- |
+| 2026-08-05 | **Sandbox & Architecture Audit:** Mapped the strict JNE/SAP Sandbox constraints and documented the `x-client-source: woocommerce` header requirement. |
 | 2026-07-19 | **Re-verified live** against production during the Formalin integration: base URL confirmed working, `courier=all` returns a **per-courier map** (not an array), and `/order/estimate` has **no ETD field** (prices only). |
 | 2026-07-03 | **Live-verified** against the production API (read-only): base URL confirmed, the two-origin-ID rule fixed across docs & client, `courier=all` returns 14–15 couriers. |
 | 2026-07-03 | **Dev-ready repo:** `docs/` `spec/` `examples/` `scripts/`, AGENTS.md, TypeScript client, Makefile, smoke test, `requests.http`, CI, LICENSE/SECURITY/CONTRIBUTING. |
