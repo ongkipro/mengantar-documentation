@@ -12,6 +12,7 @@ MENGANTAR_SANDBOX_KEY=your_sandbox_key
 MENGANTAR_SANDBOX=true
 MENGANTAR_ORIGIN_WILAYAH_ID=your_pickup_PICKUP_AUTOFILL   # _id WILAYAH asal → untuk estimate
 MENGANTAR_PICKUP_ADDRESS_ID=your_pickup_address__id       # _id alamat pickup → untuk pickup.address_id & /time
+MENGANTAR_CLIENT_SOURCE=direct              # isi "woocommerce" hanya untuk integrasi WooCommerce
 ```
 
 Variabel tanpa prefix `NEXT_PUBLIC_` tidak terekspos ke browser — aman untuk secret.
@@ -22,97 +23,50 @@ Variabel tanpa prefix `NEXT_PUBLIC_` tidak terekspos ke browser — aman untuk s
 
 ## 2. Client Mengantar (server-only)
 
+Salin [`../examples/mengantar-client.ts`](../examples/mengantar-client.ts) ke
+`lib/mengantar-client.ts`; jangan membuat request helper kedua.
+
 `lib/mengantar.ts`:
 ```ts
 import 'server-only';
+import { MengantarClient } from './mengantar-client';
 
-const SANDBOX = process.env.MENGANTAR_SANDBOX === 'true';
-const BASE_URL = SANDBOX
-  ? 'https://sandbox.mengantar.com'
-  : 'https://api-public.mengantar.com';
-const API_KEY = (SANDBOX && process.env.MENGANTAR_SANDBOX_KEY)
+const sandbox = process.env.MENGANTAR_SANDBOX === 'true';
+const apiKey = sandbox
   ? process.env.MENGANTAR_SANDBOX_KEY
   : process.env.MENGANTAR_API_KEY;
 
-const PREFIX = `${BASE_URL}/api/public/${API_KEY}`;
+if (!apiKey) throw new Error('MENGANTAR_API_KEY belum dikonfigurasi');
 
-export type MengantarResponse<T = any> = { success: boolean; message?: string; data?: T };
-
-async function request<T = any>(
-  path: string,
-  init: { method?: string; json?: unknown; form?: Record<string, string>; revalidate?: number } = {},
-): Promise<MengantarResponse<T>> {
-  const headers: Record<string, string> = {};
-  let body: BodyInit | undefined;
-
-  if (init.json !== undefined) {
-    headers['Content-Type'] = 'application/json';
-    headers['Accept'] = 'application/json';
-    body = JSON.stringify(init.json);
-  } else if (init.form) {
-    body = new URLSearchParams(init.form);
-  }
-
-  const res = await fetch(`${PREFIX}${path}`, {
-    method: init.method ?? 'GET',
-    headers,
-    body,
-    // GET di-cache mirip plugin (5 menit). POST jangan di-cache.
-    next: init.method && init.method !== 'GET' ? undefined : { revalidate: init.revalidate ?? 300 },
-    cache: init.method && init.method !== 'GET' ? 'no-store' : undefined,
-  });
-
-  const data = (await res.json()) as MengantarResponse<T>;
-  if (data?.success === false) throw new Error(data.message ?? 'Mengantar API error');
-  return data;
-}
-
-export const searchAddress = (keyword: string) =>
-  request(`/address/search?keyword=${encodeURIComponent(keyword)}`);
-
-export const listOrigins = () => request(`/address`);
-
-export function estimate(opts: {
-  originId: string; destinationId: string; courier?: string; weight?: number; codAmount?: number;
-}) {
-  const q = new URLSearchParams({
-    origin_id: opts.originId,
-    destination_id: opts.destinationId,
-    courier: opts.courier ?? 'all',
-    weight: String(opts.weight ?? 1),
-  });
-  if (opts.codAmount && opts.codAmount > 0) q.set('COD_AMOUNT', String(opts.codAmount)); // docs resmi: huruf besar
-  return request(`/order/estimate?${q.toString()}`);
-}
-
-export function createOrder(payload: {
-  courier: string;
-  pickup: { type: string; address_id: string; time_id?: string; volume?: string; origin_label?: string };
-  orders: Array<Record<string, unknown>>;
-  assignee?: string;
-}) {
-  return request(`/order`, { method: 'POST', json: payload });
-}
-
-export const trackByTrackingId = (id: string) =>
-  request(`/order?tracking_id=${encodeURIComponent(id)}`);
+export const mengantar = new MengantarClient({
+  apiKey,
+  baseUrl: sandbox
+    ? 'https://sandbox.mengantar.com'
+    : 'https://api-public.mengantar.com',
+  clientSource: process.env.MENGANTAR_CLIENT_SOURCE === 'woocommerce'
+    ? 'woocommerce'
+    : undefined,
+});
 ```
+
+Client bersama ini menangani URL/key redaction, JSON payload, error envelope, `COD_AMOUNT`,
+date pickup, WooCommerce header, serta response types. Semua callsite harus memakai instance yang sama.
 
 ## 3. Route Handlers
 
 `app/api/shipping/search/route.ts`:
 ```ts
 import { NextRequest, NextResponse } from 'next/server';
-import { searchAddress } from '@/lib/mengantar';
+import { mengantar } from '@/lib/mengantar';
 
 export async function GET(req: NextRequest) {
-  const keyword = req.nextUrl.searchParams.get('q') ?? '';
+  const keyword = req.nextUrl.searchParams.get('q')?.trim() ?? '';
   if (keyword.length < 3) return NextResponse.json([]);
+
   try {
-    const result = await searchAddress(keyword);
-    return NextResponse.json(result.data ?? []);
-  } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+    return NextResponse.json(await mengantar.searchAddress(keyword));
+  } catch {
+    return NextResponse.json({ error: 'Gagal mencari wilayah' }, { status: 502 });
   }
 }
 ```
@@ -120,77 +74,90 @@ export async function GET(req: NextRequest) {
 `app/api/shipping/estimate/route.ts`:
 ```ts
 import { NextRequest, NextResponse } from 'next/server';
-import { estimate } from '@/lib/mengantar';
+import { mengantar } from '@/lib/mengantar';
 
 export async function GET(req: NextRequest) {
   const destinationId = req.nextUrl.searchParams.get('destination_id');
   const weight = Number(req.nextUrl.searchParams.get('weight') ?? '1');
-  if (!destinationId) {
-    return NextResponse.json({ error: 'destination_id wajib' }, { status: 400 });
+  const originId = process.env.MENGANTAR_ORIGIN_WILAYAH_ID;
+  if (!destinationId || !originId || !Number.isFinite(weight) || weight <= 0) {
+    return NextResponse.json({ error: 'Parameter estimasi tidak valid' }, { status: 400 });
   }
-  const result = await estimate({
-    originId: process.env.MENGANTAR_ORIGIN_WILAYAH_ID!,
-    destinationId,
-    courier: 'all',
-    weight,
-  });
-  return NextResponse.json(result.data ?? {});
-}
-```
 
-`app/api/shipping/create/route.ts`:
-```ts
-import { NextRequest, NextResponse } from 'next/server';
-import { createOrder } from '@/lib/mengantar';
-
-export async function POST(req: NextRequest) {
-  const payload = await req.json();
-  // TODO: otorisasi + validasi sebelum membuat shipment asli
   try {
-    const result = await createOrder(payload);
-    return NextResponse.json(result);
-  } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+    return NextResponse.json(await mengantar.estimate({
+      originId,
+      destinationId,
+      courier: 'all',
+      weight,
+    }));
+  } catch {
+    return NextResponse.json({ error: 'Gagal mengambil ongkir' }, { status: 502 });
   }
 }
 ```
 
-## 4. Alternatif: Server Action
+## 3.1 Create shipment hanya dari trusted job
+
+Jangan menyediakan public Route Handler yang meneruskan body browser ke `POST /order`.
+Worker/job harus memuat order milik merchant dari database, memvalidasi ulang alamat/berat/pembayaran,
+lalu membangun `CreateOrderRequest` di server.
+
+`lib/create-shipment.ts`:
+```ts
+import 'server-only';
+import type { CreateOrderRequest } from './mengantar-client';
+import { mengantar } from './mengantar';
+
+export async function createShipmentFromJob(payload: CreateOrderRequest) {
+  return mengantar.createOrder(payload);
+}
+```
+
+## 4. Alternatif rate lookup: Server Action
+
+Server Action dapat dipanggil dari browser, jadi gunakan hanya untuk operasi read-only seperti rate lookup.
+Shipment creation tetap harus dijalankan oleh trusted job.
 
 `app/actions/shipping.ts`:
 ```ts
 'use server';
-import { estimate, createOrder } from '@/lib/mengantar';
+import { mengantar } from '@/lib/mengantar';
 
-export async function getRates(destinationId: string, weight: number) {
-  const r = await estimate({
-    originId: process.env.MENGANTAR_ORIGIN_WILAYAH_ID!,
+export async function getRates(destinationId: string, weight: number, cod = false) {
+  const originId = process.env.MENGANTAR_ORIGIN_WILAYAH_ID;
+  if (!originId || !destinationId || !Number.isFinite(weight) || weight <= 0) {
+    throw new Error('Parameter estimasi tidak valid');
+  }
+  const data = await mengantar.estimate({
+    originId,
     destinationId,
     courier: 'all',
     weight,
-  });
-  const data = (r.data ?? {}) as Record<string, any>;
+  }) as Record<string, any>;
+
   return Object.entries(data)
-    .filter(([, d]) => !d.unsupported && (d.estimatedSpecialPrice ?? d.price) > 0)
-    .map(([courier, d]) => ({
+    .filter(([, rate]) => !rate.unsupported && (!cod || !rate.unsupported_cod))
+    .filter(([, rate]) => (rate.estimatedSpecialPrice ?? rate.price ?? 0) > 0)
+    .map(([courier, rate]) => ({
       courier,
-      price: d.estimatedSpecialPrice ?? d.price,
-      eta: d.estimate_delivery ?? d.estimatedDate ?? '',
+      price: rate.estimatedSpecialPrice ?? rate.price,
     }))
     .sort((a, b) => a.price - b.price);
 }
-
-export async function placeShipment(payload: Parameters<typeof createOrder>[0]) {
-  return createOrder(payload);
-}
 ```
 
-## 5. Contoh payload create (referensi)
+## 5. Contoh payload trusted job
 
 ```ts
-await placeShipment({
+await createShipmentFromJob({
   courier: 'JNE',
-  pickup: { type: 'scheduledPickup', address_id: process.env.MENGANTAR_PICKUP_ADDRESS_ID!, time_id: 'TIME_ID', volume: 'volumeMobil' },
+  pickup: {
+    type: 'scheduledPickup',
+    address_id: process.env.MENGANTAR_PICKUP_ADDRESS_ID!,
+    time_id: 'TIME_ID',
+    volume: 'volumeMobil',
+  },
   orders: [{
     customerAddressDataId: 'DEST_ID',
     customerAddress: 'Jl. Tujuan No. 5, RT 01 / RW 02, ...',
@@ -199,8 +166,7 @@ await placeShipment({
     weight: 2,
     quantity: 1,
     parcelContent: 'Kaos katun',
-    goodsValue: 150000,        // non-COD
-    // COD: 150000,            // gunakan ini menggantikan goodsValue bila order COD
+    goodsValue: 150000,
   }],
 });
 ```
@@ -210,14 +176,19 @@ await placeShipment({
 `POST /order` mengembalikan `data` berupa **array**; resi ada di `cnote_no` (lihat [01-api-reference.md](01-api-reference.md) §7.5):
 
 ```ts
-const r = await placeShipment(payload);
-const entry = (r.data ?? [])[0] ?? {};
+const result = await createShipmentFromJob(payload);
+const entry = result.data?.[0];
+if (!entry) throw new Error('Mengantar tidak mengembalikan order');
+
 const shipment = {
-  orderId: entry.ORDER_ID ?? null,
-  tracking: entry.cnote_no ?? null,   // null bila resi belum tersedia
+  orderId: entry.ORDER_ID,
+  tracking: entry.cnote_no,
   status: entry.status ?? '',
-  paymentStatus: entry.payment_status ?? '',
+  isPaid: entry.isPaid,
+  batchId: entry.batch_id ?? result.batch_id,
+  errors: result.errors ?? [],
 };
+// isPaid === false → top-up lalu payUnpaid(batchId); jangan create ulang atau polling buta.
 ```
 
 `payload.courier` harus nama shipment resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`,
@@ -225,11 +196,15 @@ const shipment = {
 
 ## 7. Catatan
 
-- Validasi server: alamat ≥ 10 char, berat ≤ batas service type, COD dalam rentang kurir
-  (lihat [02-couriers-and-rules.md](02-couriers-and-rules.md)).
+- Validasi server: ownership order/merchant, status belum dikirim, alamat ≥ 10 char, berat ≤ batas
+  service, dan COD dalam rentang kurir.
+- Public search/estimate Route Handler perlu rate limit, batas panjang query, dan cache; jangan
+  meneruskan pesan upstream mentah ke browser.
 - **Normalisasi nama wilayah** dari `/address/search` (lihat [03-data-model.md](03-data-model.md) §6).
-- Buat shipment via job/queue + retry, dan polling resi dengan backoff — lihat [04-how-it-works.md](04-how-it-works.md).
-- `next: { revalidate: 300 }` meniru cache 5 menit plugin untuk GET; POST selalu `no-store`.
+- Buat shipment melalui queue/job dengan idempotency key/order state; serialkan create per akun untuk
+  JT Premium/Ninja/SiCepat, lalu polling resi hanya bila `isPaid` bukan `false`.
+- Cache rate/search secara eksplisit di Route Handler atau data layer; shared client tidak menetapkan
+  kebijakan cache framework.
 - Jangan pernah letakkan `MENGANTAR_API_KEY` di komponen client atau `NEXT_PUBLIC_*`.
 
 ---

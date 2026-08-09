@@ -62,8 +62,9 @@ Pembuatan shipment **tidak terjadi saat checkout**, melainkan saat order berubah
    - Tentukan `pickup` (type, address_id, time_id, volume). Bila `scheduledPickup` butuh `time_id`:
      pilih jadwal yang ada (`/time`), atau auto-buat (`POST /time`), atau tandai `pending_pickup_time`.
    - Panggil `POST /order` per group. `courier` dipetakan ke nama shipment resmi.
-4. **Simpan hasil.** Dari response (`data[]`): ambil `ORDER_ID`, `cnote_no`, `status`, `payment_status`,
-   `error`, plus `batch`/`batch_id`. Tulis ke array `_wm_mengantar_shipments` + meta ringkas + catatan order.
+4. **Simpan hasil.** Dari response (`data[]`): ambil `ORDER_ID`, `cnote_no`, `status`, `isPaid`,
+   `error`, serta `batch`/`batch_id` tingkat item dan envelope. Jangan buang `errors[]` tingkat atas
+   karena satu batch bisa berhasil parsial.
 5. **Jadwalkan tracking** bila resi belum ada (lihat Alur D).
 
 ### Pending pickup time (kasus khusus)

@@ -43,8 +43,8 @@ create table shipments (
   is_paid          boolean default false,
   cod_amount       integer,                       -- 0 = non-COD
   price            integer,
-  origin_id        text,                          -- address_id (pickup)
-  destination_id   text,                          -- customerAddressDataId
+  pickup_address_id text,                         -- pickup.address_id dari GET /address
+  origin_wilayah_id text,                         -- estimate origin_id = PICKUP_AUTOFILL / wilayah _id
   receiver_name    text,
   receiver_phone   text,
   receiver_city    text,
@@ -74,7 +74,7 @@ bisa punya banyak shipment (multi-origin / multi-kurir / split paket). Bentuk sa
   "order_id": "MGT-0001",           // ORDER_ID dari response Mengantar
   "tracking": "JNE0012345678",      // cnote_no (resi); null bila belum tersedia
   "status": "created",              // created | error | partial_error | pending_pickup_time
-  "payment_status": "paid",         // paid | unpaid
+  "payment_status": "paid",         // state internal, diturunkan dari response isPaid
   "error": "",                      // pesan error bila gagal
   "batch": "BATCH-XYZ",             // batch dari response
   "batch_id": "665f...",            // batch_id dari response
@@ -102,9 +102,9 @@ Ini efektif adalah **snapshot semua input yang dibutuhkan `POST /order`**:
   "product_ids": [101, 102],
   "product_skus": ["SKU-A", "SKU-B"],
   "custom_products": [ /* name, qty, price, weight, variant */ ],
-  "origin_address_id": "ORIGIN_ID",
-  "destination_id": "DEST_ID",
-  "customer_address_id": "DEST_ID",
+  "pickup_address_id": "PICKUP_ADDRESS_ID",
+  "origin_wilayah_id": "ORIGIN_WILAYAH_ID",
+  "destination_id": "DESTINATION_WILAYAH_ID",
   "customer_address": "Jl. ...",
   "customer_name": "Siti",
   "customer_phone": "0811...",

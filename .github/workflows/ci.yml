@@ -23,5 +23,5 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Typecheck client TypeScript
-        run: npx -y -p typescript tsc -p examples/tsconfig.json && echo "client OK"
+      - name: Typecheck and test TypeScript client
+        run: make client-check client-test

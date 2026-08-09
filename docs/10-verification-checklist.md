@@ -70,7 +70,7 @@ Hasil:
 - [ ] `GET /address/search` — semua field item (`id` vs `_id`, `*_NAME`, `zip`, dll) + tipe.
 - [ ] `GET /address` — semua field alamat pickup.
 - [ ] `GET /order/estimate` (single & `all`) — field per kurir lengkap (`price`, `estimatedSpecialPrice`, `estimate_delivery`, `estimatedDate`, `unsupported`, `unsupported_cod`, `discount`, `origin_data`, dll).
-- [ ] `POST /order` — bentuk lengkap `data[]` (`ORDER_ID`, `cnote_no`, `status`, `statusCategory`, `payment_status`, `error`) + `batch`/`batch_id`.
+- [ ] `POST /order` — bentuk lengkap `data[]` (`ORDER_ID`, `cnote_no`, `status`, `statusCategory`, `isPaid`, `error`) + `batch`/`batch_id`/`errors[]`.
 - [ ] `GET /order?order_id=` & `?tracking_id=` — field tracking + struktur `history[]`.
 - [ ] `GET /time` — field slot (`time_id`?, `date`, `time`, label).
 - [ ] `GET /invoices` — struktur lengkap.

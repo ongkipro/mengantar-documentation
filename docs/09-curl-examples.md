@@ -23,49 +23,53 @@ curl -sS "$MGT_PREFIX/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destinat
 ```bash
 curl -sS "$MGT_PREFIX/address/search?keyword=$(printf 'menteng' | jq -sRr @uri)" | jq '.data[0]'
 ```
-Ambil `.data[0]._id` sebagai `origin_id` / `destination_id`.
+Ambil `.data[0]._id` sebagai `destination_id`; untuk asal, pakai nilai `PICKUP_AUTOFILL`
+dari alamat pickup (`GET /address`), bukan `_id` alamat pickup.
 
 ## 3. List alamat pickup (origin)
 ```bash
-curl -sS "$MGT_PREFIX/address" | jq '.data[] | {id:._id, name:.PICKUP_NAME, addr:.PICKUP_ADDRESS}'
+curl -sS "$MGT_PREFIX/address" | jq '.data[] | {pickup_address_id:._id, origin_wilayah_id:.PICKUP_AUTOFILL, name:.PICKUP_NAME, addr:.PICKUP_ADDRESS}'
 ```
 
-## 4. Buat / update alamat pickup (form)
+## 4. Buat / update alamat pickup (JSON)
 ```bash
 curl -sS -X POST "$MGT_PREFIX/address" \
-  --data-urlencode "PICKUP_AUTOFILL=DEST_ID_WILAYAH" \
-  --data-urlencode "PICKUP_ADDRESS=Jl. Contoh No. 1, Jakarta" \
-  --data-urlencode "PICKUP_PIC_PHONE=08123456789" \
-  --data-urlencode "PICKUP_PIC=Budi" \
-  --data-urlencode "PICKUP_NAME=Gudang Utama" | jq
-# Tambahkan --data-urlencode "_id=ADDRESS_ID" untuk update
+  -H "Content-Type: application/json" \
+  -d '{
+    "PICKUP_AUTOFILL":"ORIGIN_WILAYAH_ID",
+    "PICKUP_ADDRESS":"Jl. Contoh No. 1, Jakarta",
+    "PICKUP_PIC_PHONE":"08123456789",
+    "PICKUP_PIC":"Budi",
+    "PICKUP_NAME":"Gudang Utama"
+  }' | jq
+# Tambahkan "_id":"PICKUP_ADDRESS_ID" untuk update
 ```
 
 ## 5. Jadwal pickup
 ```bash
-# List slot untuk satu origin
-curl -sS "$MGT_PREFIX/time?address=ORIGIN_ID" | jq
+# List slot untuk satu alamat pickup
+curl -sS "$MGT_PREFIX/time?address=PICKUP_ADDRESS_ID" | jq
 
-# Tambah slot  ⚠️ date = mm-dd-yyyy (bulan-tanggal-tahun), time = 9:00..18:00
+# Tambah slot  ⚠️ date = mm-dd-yyyy (bulan-tanggal-tahun), time = 9:00..18:00,
+# dan jadwal harus minimal 90 menit dari sekarang.
 curl -sS -X POST "$MGT_PREFIX/time" \
-  --data-urlencode "address_id=ORIGIN_ID" \
-  --data-urlencode "date=07-10-2026" \
-  --data-urlencode "time=13:00" | jq
+  -H "Content-Type: application/json" \
+  -d '{"address_id":"PICKUP_ADDRESS_ID","date":"07-10-2026","time":"13:00"}' | jq
 ```
 
 ## 6. Estimasi ongkir
 ```bash
 # Semua kurir
-curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_ID&destination_id=DEST_ID&courier=all&weight=2" | jq '.data'
+curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&courier=all&weight=2" | jq '.data'
 
 # Satu kurir + COD (perhatikan COD_AMOUNT huruf besar)
-curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_ID&destination_id=DEST_ID&courier=JNE&weight=2&COD_AMOUNT=150000" | jq
+curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&courier=JNE&weight=2&COD_AMOUNT=150000" | jq
 
 # Public (flat diskon 20%) — TANPA prefix key
-curl -sS "$MGT_BASE/api/order/allEstimatePublic?origin_id=ORIGIN_ID&destination_id=DEST_ID&weight=2" | jq '.data'
+curl -sS "$MGT_BASE/api/order/allEstimatePublic?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&weight=2" | jq '.data'
 
 # 3PL (harga standar, tanpa promo) — TANPA prefix key
-curl -sS "$MGT_BASE/api/order/allEstimate3PL?origin_id=ORIGIN_ID&destination_id=DEST_ID&weight=2" | jq '.data'
+curl -sS "$MGT_BASE/api/order/allEstimate3PL?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&weight=2" | jq '.data'
 ```
 
 ## 7. Skor performa kurir
@@ -86,27 +90,40 @@ curl -sS "$MGT_PREFIX/invoices" | jq '{count, balance, first: .data[0]}'
 curl -sS "$MGT_PREFIX/my-users" | jq '.data[] | {id:._id, name}'
 ```
 
-## 10. Buat shipment (form)
+## 10. Buat shipment (JSON)
 > ⚠️ Membuat shipment ASLI. Pakai **sandbox** untuk testing.
 ```bash
 curl -sS -X POST "$MGT_PREFIX/order" \
-  -F 'courier=JNE' \
-  -F 'pickup={"type":"scheduledPickup","volume":"volumeMobil","address_id":"ORIGIN_ID","time_id":"TIME_ID"}' \
-  -F 'orders=[{
-        "customerAddressDataId":"DEST_ID",
-        "customerAddress":"Jl. Tujuan No. 5, Bandung, Jawa Barat 40123",
-        "customerName":"Siti","customerPhone":"08111111111",
-        "parcelContent":"Kaos katun","weight":2,"quantity":1,"goodsValue":150000
-      }]' | jq
+  -H "Content-Type: application/json" \
+  -d '{
+    "courier":"JNE",
+    "pickup":{
+      "type":"scheduledPickup",
+      "volume":"volumeMobil",
+      "address_id":"PICKUP_ADDRESS_ID",
+      "time_id":"TIME_ID"
+    },
+    "orders":[{
+      "customerAddressDataId":"DESTINATION_WILAYAH_ID",
+      "customerAddress":"Jl. Tujuan No. 5, Bandung, Jawa Barat 40123",
+      "customerName":"Siti",
+      "customerPhone":"08111111111",
+      "parcelContent":"Kaos katun",
+      "weight":2,
+      "quantity":1,
+      "goodsValue":150000
+    }]
+  }' | jq
 ```
-Resi ada di `.data[0].cnote_no`, order id di `.data[0].ORDER_ID`, batch di `.batch_id`.
+Resi ada di `.data[0].cnote_no`, status pembayaran di `.data[0].isPaid`, order id di
+`.data[0].ORDER_ID`, dan batch di `.data[0].batch_id`/`.batch_id`.
 > JT Premium / Ninja / SiCepat: **jangan** kirim batch paralel — gabung ke satu request (hindari `409`).
 
 ## 11. Bayar order unpaid (saldo kurang saat create)
 ```bash
 curl -sS -X POST "$MGT_PREFIX/order/pay-unpaid" \
-  --data-urlencode "courier=JNE" \
-  --data-urlencode "batch_id=BATCH_ID" | jq
+  -H "Content-Type: application/json" \
+  -d '{"courier":"JNE","batch_id":"BATCH_ID"}' | jq
 ```
 
 ## 12. Tracking / list order
@@ -122,8 +139,8 @@ curl -sS "$MGT_PREFIX/order?page=1&size=50&courier=JNE&cod=NON_COD&category=coll
 ## 13. Hapus order
 ```bash
 curl -sS -X DELETE "$MGT_PREFIX/order" \
-  --data-urlencode 'courier=JNE' \
-  --data-urlencode 'ids=["ORDER_OBJECT_ID_1","ORDER_OBJECT_ID_2"]' | jq
+  -H "Content-Type: application/json" \
+  -d '{"courier":"JNE","ids":["ORDER_OBJECT_ID_1","ORDER_OBJECT_ID_2"]}' | jq
 ```
 
 ## 14. Batch
@@ -133,7 +150,8 @@ curl -sS "$MGT_PREFIX/batch?page=1&size=50&courier=JNE" | jq '.data | length'
 
 # Hapus batch
 curl -sS -X DELETE "$MGT_PREFIX/batch" \
-  --data-urlencode 'courier=JNE' --data-urlencode 'id=BATCH_ID' | jq
+  -H "Content-Type: application/json" \
+  -d '{"courier":"JNE","id":"BATCH_ID"}' | jq
 ```
 
 ## 15. Skor penerima (cek risiko RTS sebelum COD)
@@ -146,14 +164,14 @@ curl -sS "$MGT_PREFIX/getReceiverScoreByNumberUser?search=8123456789" | jq '.dat
 ## Urutan smoke-test end-to-end (disarankan, sandbox)
 
 ```
-1) #1  validasi key           → success:true
-2) #3  list origin            → catat origin_id
-3) #2  cari tujuan            → catat destination_id (_id)
-4) #6  estimasi               → lihat harga per kurir
-5) #7  performa kurir         → skor/rekomendasi (opsional)
-6) #5  list/tambah pickup time → catat time_id
-7) #9  my-users              → catat assignee (opsional)
-8) #10 buat shipment          → catat cnote_no + ORDER_ID + batch_id
+1) #1  validasi key                     → success:true
+2) #3  list pickup                       → catat PICKUP_ADDRESS_ID + ORIGIN_WILAYAH_ID
+3) #2  cari tujuan                       → catat DESTINATION_WILAYAH_ID
+4) #6  estimasi                          → pakai ORIGIN_WILAYAH_ID, bukan PICKUP_ADDRESS_ID
+5) #7  performa kurir                    → skor/rekomendasi (opsional)
+6) #5  list/tambah pickup time           → pakai PICKUP_ADDRESS_ID, catat TIME_ID
+7) #9  my-users                          → catat assignee (opsional)
+8) #10 buat shipment                     → pickup.address_id = PICKUP_ADDRESS_ID
 9) #11 pay-unpaid            → bila saldo kurang saat create
 10) #12 tracking by order_id  → cek status & cnote_no
 11) #15 receiver score        → validasi sebelum kirim COD besar

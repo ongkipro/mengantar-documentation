@@ -79,8 +79,8 @@ Plugin memblokir create shipment bila salah satu gagal — replikasikan validasi
 4. 409 Conflict (JT/Ninja/SiCepat)    → antre; jangan kirim batch paralel, gabung ke 1 batch lalu retry.
 5. success:false + pickup time error  → state "pending_pickup_time", jangan retry buta.
 6. Validasi pra-kirim gagal           → tolak di UI/sebelum API, tampilkan pesan spesifik.
-7. created tapi cnote_no kosong        → state "pending_tracking", poll /order?order_id= (backoff).
-8. saldo tidak cukup (unpaid=true)    → panggil /order/pay-unpaid setelah top-up saldo.
+7. created, cnote_no kosong, isPaid bukan false → state "pending_tracking", poll /order?order_id= (backoff).
+8. created dengan isPaid=false              → top-up lalu /order/pay-unpaid; jangan create ulang.
 ```
 
 Selalu simpan `message` + `errors` mentah untuk audit, tapi **redaksi API key** dari log.

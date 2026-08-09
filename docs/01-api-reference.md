@@ -30,9 +30,9 @@ Endpoint utama memakai pola **API key di dalam path**:
 **Penting:** karena key ada di URL, **JANGAN** panggil API ini dari kode browser/klien.
 Selalu proxy lewat server (Astro endpoint / Next.js route handler) supaya key tidak bocor.
 
-### Endpoint TANPA prefix `/api/public/{key}`
+### Endpoint tanpa key tervalidasi
 
-Tiga endpoint estimasi bersifat publik dan **tidak** memakai `/api/public/{key}`:
+Dua endpoint estimasi berikut tidak memakai `/api/public/{key}`:
 
 ```
 {BASE_URL}/api/order/allEstimatePublic     (GET)
@@ -44,10 +44,10 @@ karena tidak divalidasi pada route ini (bagian dari legacy system) — tapi stru
 
 ### Header
 
-- `GET` & `POST` form: tanpa header khusus (form `application/x-www-form-urlencoded` atau `multipart` via `-F`).
-- `POST` JSON (`getPerformancePublic`): `Content-Type: application/json`, `Accept: application/json`.
-- `x-client-source: woocommerce`: **Wajib disertakan** jika request berasal dari plugin WooCommerce. (Abaikan atau isi `directCall` untuk integrasi custom SaaS).
-- `POST /order` di docs resmi memakai form (`-F`); plugin mengirim JSON. Keduanya diterima ([verifikasi]).
+- Write endpoint memakai `Content-Type: application/json`; endpoint GET tidak membutuhkan header khusus.
+- `Accept: application/json` boleh dikirim eksplisit.
+- `x-client-source: woocommerce`: **wajib** jika request berasal dari integrasi WooCommerce.
+  Integrasi non-WooCommerce tidak perlu mengirim header ini (`directCall` adalah default).
 
 ### Amplop response
 
@@ -136,12 +136,15 @@ Ambil dulu data wilayah dari `GET /address/search`, lalu kirim `_id`-nya sebagai
 Sertakan `_id` (alamat) untuk **update** alamat yang sudah ada.
 
 ```bash
-curl -X POST {BASE_URL}/api/public/{API_KEY}/address \
-  -F 'PICKUP_AUTOFILL=5fc63038f8f44b34aa4c1cc4' \
-  -F 'PICKUP_ADDRESS=Jl. Sederhana No. 142' \
-  -F 'PICKUP_PIC_PHONE=085270391495' \
-  -F 'PICKUP_PIC=PIC Name' \
-  -F 'PICKUP_NAME=Seller or Store Name'
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/address' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "PICKUP_AUTOFILL":"5fc63038f8f44b34aa4c1cc4",
+    "PICKUP_ADDRESS":"Jl. Sederhana No. 142",
+    "PICKUP_PIC_PHONE":"085270391495",
+    "PICKUP_PIC":"PIC Name",
+    "PICKUP_NAME":"Seller or Store Name"
+  }'
 ```
 
 **Body params:**
@@ -163,7 +166,7 @@ Response mengembalikan objek alamat lengkap (`PICKUP_DESTINATION_CODE`, `PICKUP_
 
 ### 3.3 List alamat pickup — `GET /address`
 
-Response: `{ success, data: [ {…alamat pickup…} ] }`. Ambil `_id` sebagai **`origin_id`**.
+Response: `{ success, data: [ {…alamat pickup…} ] }`. Ambil `_id` sebagai **`pickup_address_id`** untuk `/time` dan `POST /order`; ambil `PICKUP_AUTOFILL` sebagai **`origin_id` estimasi ongkir**.
 
 ---
 
@@ -174,10 +177,9 @@ Response: `{ success, data: [ {…alamat pickup…} ] }`. Ambil `_id` sebagai **
 Dipakai saat `pickup.type = scheduledPickup` di create order.
 
 ```bash
-curl -X POST {BASE_URL}/api/public/{API_KEY}/time \
-  -F 'address_id=62e27d67ecf5ae2893bc070a' \
-  -F 'date=11-27-2022' \
-  -F 'time=13:00'
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/time' \
+  -H 'Content-Type: application/json' \
+  -d '{"address_id":"62e27d67ecf5ae2893bc070a","date":"11-27-2022","time":"13:00"}'
 ```
 
 | Field | Tipe | Keterangan |
@@ -187,11 +189,16 @@ curl -X POST {BASE_URL}/api/public/{API_KEY}/time \
 | `time` | String | Salah satu: `9:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00, 18:00` |
 
 > ⚠️ **Perhatikan format tanggal `mm-dd-yyyy`** (contoh resmi `11-27-2022` = 27 Nov 2022), **bukan** `YYYY-MM-DD`.
+> Jadwal harus minimal **90 menit dari waktu saat ini**; request yang lebih dekat ditolak sebagai `invalid pickup time`.
+
+Response `POST /time`: `{ success, data: { "_id":"…", "date":"…", "time":"13:00", … } }`.
+`data` adalah satu objek slot, bukan array.
 
 ### 4.2 List jadwal — `GET /time?address={address_id}`
 
 ```bash
-curl -X GET '{BASE_URL}/api/public/{API_KEY}/time' -d 'address=62e27d67ecf5ae2893bc070a'
+curl -G '{BASE_URL}/api/public/{API_KEY}/time' \
+  --data-urlencode 'address=62e27d67ecf5ae2893bc070a'
 ```
 
 Response: `{ success, data: [ { "_id": "…", "date": "2023-02-24T12:00:00.000Z", "time": "12:00" } ] }`.
@@ -369,35 +376,53 @@ curl -X POST '{BASE_URL}/api/public/{API_KEY}/order/getPerformancePublic' \
 ## 6. Invoice & Saldo — `GET /invoices`
 
 ```bash
-curl -X GET '{BASE_URL}/api/public/{API_KEY}/invoices'
+curl -G '{BASE_URL}/api/public/{API_KEY}/invoices' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'size=50' \
+  --data-urlencode 'invoiceFilter=all'
 ```
 
+Query opsional: `page`, `size`, `dateRange` (JSON berisi `startDate`/`endDate` ISO 8601), dan
+`invoiceFilter` (`typeWithdraw`, `typeAddBalance`, `typePayment`, `typeReconciliation`, `typeRefund`, atau `all`).
 Response: `{ success, data: [ {…invoice…} ], count: 19, balance: 9635676 }`.
-Tiap invoice punya `inv_number`, `type` (mis. `typeWithdraw`), `amount`, `total`, `status`
-(mis. `statusCleared`), `balance`, `paydAt`, dll. `balance` = saldo akun (rupiah).
+Tiap invoice punya `inv_number`, `type`, `amount`, `total`, `status`, `balance`, `paydAt`, dll.
+`balance` tingkat atas = saldo akun (rupiah).
 
 ---
 
 ## 7. Buat Shipment — `POST /order`
 
-Docs resmi memakai form (`-F`), dengan `pickup` dan `orders` sebagai JSON-string di dalam field form.
+Docs resmi memakai JSON.
 
 ```bash
 curl -X POST '{BASE_URL}/api/public/{API_KEY}/order' \
-  -F 'courier=Sap' \
-  -F 'pickup={ "type":"scheduledPickup", "volume":"volumeMotor", "address_id":"62e27d67ecf5ae2893bc070a", "time_id":"62e27d81ecf5ae2893bc070b" }' \
-  -F 'orders=[{
-        "assignee":"5fc62dd8f8f44b34aa4bc9aa",
-        "COD":"12444",
-        "customerAddressDataId":"5fc62dd8f8f44b34aa4bc9aa",
-        "customerAddress":"address", "customerName":"name", "customerPhone":"123456",
-        "parcelContent":"Kaos", "weight":1, "quantity":1,
-        "customProducts":[{ "name":"Baju Biru","variant":"XL / Biru","qty":2,"price":120000 }]
-      }]'
+  -H 'Content-Type: application/json' \
+  -d '{
+    "courier":"Sap",
+    "pickup":{
+      "type":"scheduledPickup",
+      "volume":"volumeMotor",
+      "address_id":"62e27d67ecf5ae2893bc070a",
+      "time_id":"62e27d81ecf5ae2893bc070b"
+    },
+    "orders":[{
+      "assignee":"5fc62dd8f8f44b34aa4bc9aa",
+      "COD":12444,
+      "customerAddressDataId":"5fc62dd8f8f44b34aa4bc9aa",
+      "customerAddress":"address",
+      "customerName":"name",
+      "customerPhone":"123456",
+      "parcelContent":"Kaos",
+      "weight":1,
+      "quantity":1,
+      "customProducts":[{"name":"Baju Biru","variant":"XL / Biru","qty":2,"price":120000}]
+    }]
+  }'
 ```
 
-> Jika **saldo tidak cukup**, order tetap dibuat sebagai **unpaid** (`cnote_no` kosong, `unpaid=true`),
-> lalu bisa dibayar lewat `POST /order/pay-unpaid`.
+> Jika **saldo tidak cukup**, order tetap sukses dibuat sebagai **unpaid**
+> (`isPaid=false`, `cnote_no=null`); jangan membuat ulang order. Top-up saldo lalu bayar melalui
+> `POST /order/pay-unpaid` memakai `batch_id` dari response.
 
 ### 7.1 Field `courier`
 
@@ -490,7 +515,8 @@ Response: `{ success, data: [ { "_id":"…", "name":"abbi", "email":"…" } ] }`
 
 ```bash
 curl -X POST '{BASE_URL}/api/public/{API_KEY}/order/pay-unpaid' \
-  -F 'courier=Sap' -F 'batch_id=6332f5b98c3ea4bc8e15f72d'
+  -H 'Content-Type: application/json' \
+  -d '{"courier":"Sap","batch_id":"6332f5b98c3ea4bc8e15f72d"}'
 ```
 
 | Field | Tipe | Keterangan |
@@ -505,10 +531,14 @@ Response: `{ success: true, count: 1 }` (jumlah order yang berhasil dibayar).
 Lacak satu order (via `tracking_id` / `order_id`) **atau** list dengan filter & pagination.
 
 ```bash
-curl -X GET '{BASE_URL}/api/public/{API_KEY}/order' \
-  -d 'page=1' -d 'size=50' \
-  -d 'dateRange={"startDate":"2021-09-23T00:00:00.000Z","endDate":"2022-09-23T23:59:59.999Z"}' \
-  -d 'courier=Sap' -d 'cod=NON_COD' -d 'category=collected_customer' -d 'status={"DELIVERED":true}'
+curl -G '{BASE_URL}/api/public/{API_KEY}/order' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'size=50' \
+  --data-urlencode 'dateRange={"startDate":"2021-09-23T00:00:00.000Z","endDate":"2022-09-23T23:59:59.999Z"}' \
+  --data-urlencode 'courier=Sap' \
+  --data-urlencode 'cod=NON_COD' \
+  --data-urlencode 'category=collected_customer' \
+  --data-urlencode 'status={"DELIVERED":true}'
 ```
 
 | Field | Tipe | Keterangan |
@@ -534,7 +564,8 @@ curl -X GET '{BASE_URL}/api/public/{API_KEY}/order' \
 
 ```bash
 curl -X DELETE '{BASE_URL}/api/public/{API_KEY}/order' \
-  -F 'courier=Sap' -F 'ids=["6332f9dfdeff6b0cae5e6c11","6332f9dfdeff6b0cae5e6c12"]'
+  -H 'Content-Type: application/json' \
+  -d '{"courier":"Sap","ids":["6332f9dfdeff6b0cae5e6c11","6332f9dfdeff6b0cae5e6c12"]}'
 ```
 
 | Field | Tipe | Keterangan |
@@ -547,8 +578,10 @@ curl -X DELETE '{BASE_URL}/api/public/{API_KEY}/order' \
 ### 9.4 List batch — `GET /batch`
 
 ```bash
-curl -X GET '{BASE_URL}/api/public/{API_KEY}/batch' \
-  -d 'page=1' -d 'size=50' -d 'courier=Sap'
+curl -G '{BASE_URL}/api/public/{API_KEY}/batch' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'size=50' \
+  --data-urlencode 'courier=Sap'
 ```
 
 Params: `page`, `size`, `dateRange`, `courier`. Response `data[]` berisi ringkasan batch
@@ -558,7 +591,8 @@ Params: `page`, `size`, `dateRange`, `courier`. Response `data[]` berisi ringkas
 
 ```bash
 curl -X DELETE '{BASE_URL}/api/public/{API_KEY}/batch' \
-  -F 'courier=Sap' -F 'id=6332f9dfdeff6b0cae5e6c11'
+  -H 'Content-Type: application/json' \
+  -d '{"courier":"Sap","id":"6332f9dfdeff6b0cae5e6c11"}'
 ```
 
 | Field | Tipe | Keterangan |

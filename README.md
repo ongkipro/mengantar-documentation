@@ -14,7 +14,7 @@ Use it with any server-capable stack: **Astro**, **Next.js**, Node, Hono, Larave
 ![endpoints](https://img.shields.io/badge/endpoints-18-success)
 ![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![last update](https://img.shields.io/badge/last%20update-2026--08--05-informational)](CHANGELOG.md)
+![last update](https://img.shields.io/badge/last%20update-2026--08--10-informational)
 ![couriers](https://img.shields.io/badge/couriers-JNE%20·%20SiCepat%20·%20J%26T%20·%20Anteraja%20·%20Ninja%20·%20Lion%20·%20IDExpress%20·%20SAP-lightgrey)
 
 </div>
@@ -27,7 +27,7 @@ Mengantar.com is an Indonesian logistics aggregator: one API for multi-courier s
 
 As an **Official Partner Mengantar**, [ongki.pro](https://ongki.pro) maintains this documentation to help teams integrate Mengantar into storefronts, headless commerce projects, and backend systems.
 
-> **Verified:** endpoints, parameters, and response shapes here are matched against the official docs (`app.mengantar.com/docs`) and **verified live against the production API** (read-only, 2026-07-03; **re-verified 2026-07-19** during a live integration — base URL, `courier=all` per-courier map, no ETD field). Recent **2026-08-05 audit** introduced strict Sandbox limits mapping and WooCommerce origin validation rules. Operational behaviour (caching, validation) is derived from the WooCommerce plugin and marked **[plugin]**.
+> **Verified:** endpoints, parameters, and response shapes here are matched against the official docs (`app.mengantar.com/docs`) and **verified live against the production API** (read-only, 2026-07-03; **re-verified 2026-07-19** during a live integration — base URL, `courier=all` per-courier map, no ETD field). Recent **2026-08-05 & 2026-08-10 audits** confirmed strict Sandbox limits mapping, WooCommerce origin validation rules, complete PRD integration specs, and client test suites. Operational behaviour (caching, validation) is derived from the WooCommerce plugin and marked **[plugin]**.
 
 > **API access:** this repository does not provide API keys. To request production/sandbox API access, contact the official Mengantar platform/team. After you receive a key, run the smoke tests in [09-curl-examples](docs/09-curl-examples.md) and complete the [10-verification-checklist](docs/10-verification-checklist.md).
 
@@ -115,7 +115,7 @@ sequenceDiagram
 ├── README.md                 # this file
 ├── AGENTS.md  (= CLAUDE.md)   # contract for AI coding agents (integration golden rules)
 ├── Makefile                  # terminal entrypoint: make check | client-check | smoke
-├── docs/                     # 01–10 canonical documentation
+├── docs/                     # 01–12 canonical documentation
 ├── spec/openapi.yaml         # OpenAPI 3.1 — 18 endpoints (codegen)
 ├── examples/                 # server-only TypeScript client + usage & recipes
 ├── scripts/                  # check-links.sh (validation) · smoke.sh (read-only API test)
@@ -177,9 +177,11 @@ Minimum requirements:
 | 08 | [error-catalog](docs/08-error-catalog.md) | API/validation/operational errors and handling patterns |
 | 09 | [curl-examples](docs/09-curl-examples.md) | Ready-to-run cURL examples and smoke-test order |
 | 10 | [verification-checklist](docs/10-verification-checklist.md) | Verification steps + what is already confirmed live |
+| 11 | [prd](docs/11-prd.md) | Product requirements, goals/non-goals, requirements, and verification matrix |
+| 12 | [development](docs/12-development.md) | Development workflow, invariants, validation, and release checklist |
 | — | [spec/openapi.yaml](spec/openapi.yaml) | OpenAPI 3.1 spec — 18 endpoints, matched to official docs |
 
-Recommended reading order: `01 → 02 → 03 → 04`, then choose `05` or `06` based on your stack. Use `07–10` as implementation references.
+Recommended reading order: `01 → 02 → 03 → 04`, then choose `05` or `06` based on your stack. Use `07–12` as implementation, verification, and maintenance references.
 
 ---
 
@@ -215,7 +217,7 @@ const rates    = await mgt.estimate({ originId, destinationId: dest._id, courier
 
 ## Important implementation notes
 
-- Tracking number is `cnote_no` (not `tracking_id`); create-order `data` is an **array**.
+- Tracking number is `cnote_no` (not `tracking_id`); create-order `data` is an **array**, but keep the top-level `batch_id` and `errors[]` for unpaid and partial-failure handling.
 - **Two different "origin" IDs** (live-verified): estimate `origin_id`/`destination_id` are **area `_id`s** (from `/address/search`, or a pickup's `PICKUP_AUTOFILL`) — *not* the pickup-address `_id`. Create-order `pickup.address_id` and `/time?address=` use the **pickup-address `_id`**. Mixing them up returns `success:false`.
 - Courier names for create-order use Mengantar's official casing: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`. Estimate `courier` defaults to `JNE`.
 - **`GET /order/estimate?courier=all` returns `data` as a per-courier map** (keyed by courier name), **not an array** (live-verified 2026-07-19) — iterate with `Object.entries(data)`. It contains **prices only, no ETD/delivery-time field**; supply your own delivery-time labels.
@@ -247,10 +249,11 @@ After access is granted:
 
 ## Changelog
 
-**Last updated: 2026-08-05.** Recent highlights — full history in [CHANGELOG.md](CHANGELOG.md).
+**Last updated: 2026-08-07.** Recent highlights — full history in [CHANGELOG.md](CHANGELOG.md).
 
 | Date | Change |
 | --- | --- |
+| 2026-08-07 | **Contract audit:** aligned write payloads with official JSON examples, fixed unpaid handling, added WooCommerce header support, strict date validation/tests, and warning-free OpenAPI lint. |
 | 2026-08-05 | **Sandbox & Architecture Audit:** Mapped the strict JNE/SAP Sandbox constraints and documented the `x-client-source: woocommerce` header requirement. |
 | 2026-07-19 | **Re-verified live** against production during the Formalin integration: base URL confirmed working, `courier=all` returns a **per-courier map** (not an array), and `/order/estimate` has **no ETD field** (prices only). |
 | 2026-07-03 | **Live-verified** against the production API (read-only): base URL confirmed, the two-origin-ID rule fixed across docs & client, `courier=all` returns 14–15 couriers. |

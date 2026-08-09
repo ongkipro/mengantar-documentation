@@ -45,11 +45,9 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | Field | Wajib | Catatan |
 |-------|:-----:|---------|
 | `type` | ✅ | `scheduledPickup` atau `dropOff`. |
-| `address_id` | ✅ | `origin_id`. |
+| `address_id` | ✅ | `_id` alamat pickup dari `GET /address`; berbeda dari `origin_id` estimasi ongkir. |
 | `time_id` | ⚠️ | Wajib bila `type=scheduledPickup`. |
-| `time_label` | ⬜ | Informasi; format `YYYY-MM-DD [HH:MM-HH:MM]`. |
-| `volume` | ⬜ | Default `volumeMobil`. |
-| `origin_label` | ⬜ | Informasi. |
+| `volume` | ⚠️ | Wajib bila `type=scheduledPickup`; `volumeMotor`, `volumeMobil`, atau `volumeTruck`. |
 
 ### Item `orders[]`
 

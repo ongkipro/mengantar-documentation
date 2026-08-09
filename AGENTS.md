@@ -70,6 +70,8 @@ menjadi fakta pasti tanpa bukti dari akun asli.
 | Error & pola penanganan | `docs/08-error-catalog.md` |
 | cURL smoke-test | `docs/09-curl-examples.md` |
 | Yang masih perlu diverifikasi | `docs/10-verification-checklist.md` |
+| Spesifikasi produk & requirements | `docs/11-prd.md` |
+| Workflow pengembangan & release checklist | `docs/12-development.md` |
 | Client typed / codegen | `examples/mengantar-client.ts`, `spec/openapi.yaml` |
 
 ## Cara kerja saat mengubah repo ini

@@ -4,6 +4,13 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu 
 
 ## [Unreleased]
 
+### Audited (2026-08-07 — Official Contract Alignment)
+- Aligned write endpoints, OpenAPI request bodies, cURL examples, REST-client examples, smoke tooling, and the TypeScript client with the official JSON payload contract.
+- Fixed unpaid-order guidance: successful `isPaid:false` responses are no longer treated as exceptions or blindly polled; the documented recovery uses `batch_id` with `/order/pay-unpaid`.
+- Added strict pickup-date validation, correct `POST /time` object typing, preserved invoice/create-order envelope metadata, nullable coverage flags, WooCommerce `x-client-source` support, and runnable client contract tests.
+- Reworked Astro/Next.js guides to reuse the shared client and removed unsafe public shipment proxies; create-order examples now require trusted jobs, ownership/idempotency validation, and per-account serialization.
+- Added reusable OpenAPI 4XX responses, conditional pickup/payment schemas, and request boundary constraints; the specification passes Redocly's recommended lint rules without warnings.
+
 ### Audited (2026-08-05 — Sandbox & Architecture Constraints)
 - **Sandbox Limits:** Documented strict limitations for JNE (Jakarta origin only) and SAP (Jakarta → Jakarta Non-COD only) to prevent developer confusion.
 - **Client Validation:** Documented the required `x-client-source: woocommerce` header for payload sources originating from WooCommerce.

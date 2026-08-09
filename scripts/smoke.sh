@@ -67,8 +67,10 @@ if echo "$r" | jq -e '.success == true' >/dev/null 2>&1; then
 if [ $FULL -eq 1 ] && [ -n "$PICKUP_ID" ]; then
   echo "6) [FULL] Tambah + hapus slot pickup (mm-dd-yyyy) — address_id = pickup _id"
   d=$(date -d "+3 days" +%m-%d-%Y 2>/dev/null || date -v+3d +%m-%d-%Y 2>/dev/null)
+  payload=$(jq -nc --arg address_id "$PICKUP_ID" --arg date "$d" \
+    '{address_id:$address_id,date:$date,time:"13:00"}')
   r=$(curl -sS --max-time 20 -X POST "$PREFIX/time" \
-        --data-urlencode "address_id=$PICKUP_ID" --data-urlencode "date=$d" --data-urlencode "time=13:00")
+        -H "Content-Type: application/json" -d "$payload")
   TID=$(echo "$r" | jq -r '.data[-1]._id // .data._id // empty' 2>/dev/null)
   if [ -n "$TID" ]; then ok "slot dibuat ($d 13:00) id=$TID"
     r=$(curl -sS --max-time 20 -X DELETE "$PREFIX/time/$TID")

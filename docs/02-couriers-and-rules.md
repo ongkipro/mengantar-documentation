@@ -168,7 +168,7 @@ Boleh dikosongkan.
 
 - `scheduledPickup` butuh `time_id` (jadwal dari endpoint `/time`) **dan** `volume`.
 - `dropOff` tidak butuh jadwal.
-- Jadwal pickup minimal **2 jam ke depan** (`WM_PICKUP_TIME_HORIZON_SECONDS = 7200`).
+- API Mengantar menerima jadwal minimal **90 menit ke depan**; plugin memakai buffer aman **2 jam** (`WM_PICKUP_TIME_HORIZON_SECONDS = 7200`) untuk mengurangi risiko slot mepet.
 - Auto-schedule: bila tidak ada jadwal cocok, plugin bisa otomatis `POST /time` membuat slot baru,
   atau menandai shipment `pending_pickup_time` untuk dipilih manual (lihat [04-how-it-works.md](04-how-it-works.md)).
 
@@ -203,18 +203,21 @@ Bila diisi: `orders.weight` harus = Σ(qty × weight) dan `orders.quantity` = Σ
 > ⚠️ **Sandbox Traps (Penting):** Lingkungan Sandbox Mengantar memiliki batasan keras yang sering disangka sebagai bug integrasi. Jangan buang waktu debugging hal berikut:
 > 1. **JNE:** Titik origin *wajib* dari Jakarta. (Akan error `Content not confirm our security Policy` jika dari kota lain).
 > 2. **SAP:** Hanya mengizinkan order Non-COD dengan rute Jakarta → Jakarta. (Akan error `Service tidak ditemukan dalam kontrak`).
+> 3. **Saldo:** Top-up saldo sandbox harus diselesaikan melalui Midtrans Sandbox Simulator sebelum menguji flow non-COD/pay-unpaid.
 
 ---
 
 ## 9. Checklist alur end-to-end
 
-1. **Origin**: pastikan ada minimal satu alamat pickup (`GET /address`) → simpan `origin_id`.
-2. **Destination**: autocomplete `GET /address/search?keyword=` → ambil `id` sebagai `destination_id`.
-3. **Estimasi**: `GET /order/estimate?origin_id=&destination_id=&courier=all&weight=` → tampilkan harga per kurir.
-4. **Validasi**: cek batas berat & (jika COD) batas COD kurir terpilih.
-5. **(Jika scheduledPickup)**: `GET /time?address={origin_id}` → pilih `time_id`.
-6. **Create**: `POST /order` dengan `courier` (nama shipment), `pickup`, `orders[]` → simpan `cnote_no` (resi) + `ORDER_ID`.
-7. **Tracking**: `GET /order?order_id=` / `?tracking_id=` untuk update status; tautkan ke halaman tracking Mengantar.
+1. **Origin pickup**: pastikan ada minimal satu alamat pickup (`GET /address`) → simpan `_id` sebagai `pickup_address_id` untuk `/time` dan `POST /order`.
+2. **Origin wilayah**: pakai `PICKUP_AUTOFILL` dari alamat pickup sebagai `origin_id` untuk estimasi ongkir.
+3. **Destination**: autocomplete `GET /address/search?keyword=` → ambil `_id` sebagai `destination_id`.
+4. **Estimasi**: `GET /order/estimate?origin_id=&destination_id=&courier=all&weight=` → buang rate dengan `unsupported=true`; untuk COD, buang juga `unsupported_cod=true`.
+5. **Validasi**: cek harga positif serta batas berat/COD kurir sebelum opsi dikirim ke checkout.
+6. **(Jika scheduledPickup)**: `GET /time?address={pickup_address_id}` → pilih `time_id`.
+7. **Create**: `POST /order` dengan `courier` (nama shipment), `pickup`, `orders[]` → simpan `cnote_no`, `ORDER_ID`, `isPaid`, dan `batch_id`.
+8. **Unpaid**: bila `isPaid=false`, jangan buat ulang order; top-up lalu panggil `POST /order/pay-unpaid`.
+9. **Tracking**: `GET /order?order_id=` / `?tracking_id=` untuk update status; tautkan ke halaman tracking Mengantar.
 
 ---
 <sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>
