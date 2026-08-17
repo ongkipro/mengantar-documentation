@@ -48,14 +48,20 @@ export interface ClientOptions {
   fetchImpl?: typeof fetch;
   /** Wajib `"woocommerce"` untuk request yang berasal dari integrasi WooCommerce. */
   clientSource?: "woocommerce";
-  /** Dipanggil untuk tiap request (log). Key sudah diredaksi. */
+  /** Dipanggil untuk tiap request (log). API key dan semua nilai query sudah diredaksi. */
   onRequest?: (info: { method: string; url: string }) => void;
 }
 
 // ── Helper ──────────────────────────────────────────────────────────────────
 
 const DEFAULT_BASE = "https://api-public.mengantar.com";
-const redact = (url: string) => url.replace(/\/api\/public\/[^/]+/, "/api/public/**redacted**");
+const redact = (url: string): string => {
+  const safe = new URL(url.replace(/\/api\/public\/[^/]+/, "/api/public/**redacted**"));
+  const queryKeys: string[] = [];
+  safe.searchParams.forEach((_value, key) => queryKeys.push(key));
+  for (const key of queryKeys) safe.searchParams.set(key, "**redacted**");
+  return safe.toString();
+};
 
 /** Ubah Date/`YYYY-MM-DD`/`mm-dd-yyyy` → format Mengantar `mm-dd-yyyy` untuk POST /time. */
 export function toMengantarDate(d: Date | string): string {
@@ -127,9 +133,11 @@ export class MengantarClient {
   }
 
 
-  private qs(params: Record<string, string | number | boolean | undefined>): string {
+  private qs(params: object): string {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") p.set(k, String(v));
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") p.set(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+    }
     const s = p.toString();
     return s ? `?${s}` : "";
   }
@@ -166,7 +174,8 @@ export class MengantarClient {
 
   // ── 2. Jadwal pickup ───────────────────────────────────────────────────────
 
-  listPickupTimes(addressId: string) {
+  /** Docs resmi menerima GET /time tanpa query; `addressId` memfilter berdasarkan pickup `_id`. */
+  listPickupTimes(addressId?: string) {
     return this.request<PickupTime[]>("GET", this.keyed(`/time${this.qs({ address: addressId })}`));
   }
 
@@ -226,7 +235,7 @@ export class MengantarClient {
 
   // ── 4. Invoice / assignee ──────────────────────────────────────────────────
 
-  listInvoices(params: { page?: number; size?: number; dateRange?: string; invoiceFilter?: string } = {}) {
+  listInvoices(params: InvoiceQuery = {}) {
     return this.request<InvoiceEnvelope>("GET", this.keyed(`/invoices${this.qs(params)}`), { unwrap: false });
   }
 
@@ -265,15 +274,16 @@ export class MengantarClient {
   trackByOrderId(orderId: string) { return this.getOrders({ order_id: orderId }); }
   trackByResi(cnoteNo: string) { return this.getOrders({ tracking_id: cnoteNo }); }
 
-  /** Hapus order. Anteraja: hanya bisa 5 menit setelah dibuat. */
-  deleteOrders(ids: string[], courier?: Courier) {
+  /** Hapus order via `_id` atau `ORDER_ID` (eksklusif). Anteraja: hanya bisa 5 menit setelah dibuat. */
+  deleteOrders(input: DeleteOrdersRequest) {
+    const { courier, ...identifiers } = input;
     return this.request<unknown>("DELETE", this.keyed(`/order`), {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ ids, ...(courier && { courier }) }),
+      body: JSON.stringify({ ...identifiers, ...(courier && { courier }) }),
     });
   }
 
-  listBatches(params: { page?: number; size?: number; courier?: Courier } = {}) {
+  listBatches(params: BatchQuery = {}) {
     return this.request<BatchRecord[]>("GET", this.keyed(`/batch${this.qs(params)}`));
   }
 
@@ -318,7 +328,7 @@ export interface PickupAddressInput {
 }
 export type PickupTimeSlot =
   | "9:00" | "10:00" | "11:00" | "12:00" | "13:00" | "14:00" | "15:00" | "16:00" | "17:00" | "18:00";
-export interface PickupTime { _id: string; date: string; time: string; }
+export interface PickupTime { _id: string; date: string | number; time: string; }
 
 export interface CourierRate {
   price?: number; estimatedPrice?: number; estimatedSpecialPrice?: number;
@@ -330,7 +340,15 @@ export interface CourierRate {
 export interface CourierPerformance {
   couriers: { key: string; score: number }[]; bestCourier: string; recommended: string;
 }
-export interface Invoice { _id: string; inv_number?: string; type?: string; amount?: number; total?: number; status?: string; }
+export interface Invoice {
+  _id: string; inv_number: string; type: string; amount?: number; total?: number; status?: string;
+  balance?: number; balanceAmount?: number; createdAt?: string; updatedAt?: string; expiration_date?: string; paydAt?: string;
+}
+export type InvoiceFilter = "typeWithdraw" | "typeAddBalance" | "typePayment" | "typeReconciliation" | "typeRefund" | "all";
+export interface DateRange { startDate: string; endDate: string; }
+export interface InvoiceQuery {
+  page?: number; size?: number; keyword?: string; dateRange?: DateRange | string; invoiceFilter?: InvoiceFilter;
+}
 export interface InvoiceEnvelope extends Envelope<Invoice[]> { count?: number; balance?: number; }
 export interface Assignee { _id: string; name: string; email: string; }
 
@@ -353,6 +371,12 @@ export type OrderItem = {
   | { goodsValue: number; COD?: never }
   | { COD: number; goodsValue?: never }
 );
+export type DeleteOrdersRequest =
+  | { ids: string[]; orderIds?: never; courier?: Courier }
+  | { orderIds: string[]; ids?: never; courier?: Courier };
+export interface BatchQuery {
+  page?: number | string; size?: number | string; courier?: Courier; dateRange?: DateRange | string;
+}
 export interface CreatedOrder { ORDER_ID: string; cnote_no: string | null; status?: string; statusCategory?: string; isPaid?: boolean; batch?: string; batch_id?: string; error?: unknown; }
 export interface CreateOrderResponse extends Envelope<CreatedOrder[]> {
   batch?: string;
@@ -364,8 +388,10 @@ export interface CreateOrderResponse extends Envelope<CreatedOrder[]> {
 export interface OrderQuery {
   order_id?: string; tracking_id?: string; page?: number; size?: number;
   courier?: Courier; batch?: string; cod?: "COD" | "NON_COD";
-  status?: string; category?: string; ticketFilter?: string; receiverFilter?: string;
-  no_update_after_hour?: string; no_update_after_day?: string; dateRange?: string; reseller?: boolean;
+  status?: string | Record<string, boolean>; dateRange?: DateRange | string;
+  /** Filter tambahan dari plugin Woo Mengantar v1.0.32, bukan tabel query docs resmi. */
+  category?: string; ticketFilter?: string; receiverFilter?: string;
+  no_update_after_hour?: string; no_update_after_day?: string; reseller?: boolean;
 }
 export interface OrderRecord { _id: string; ORDER_ID?: string; cnote_no?: string | null; status?: string; [k: string]: unknown; }
 export interface BatchRecord { _id: string; id?: string; orders?: number; delivered?: number; [k: string]: unknown; }

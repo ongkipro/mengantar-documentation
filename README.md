@@ -14,7 +14,7 @@ Use it with any server-capable stack: **Astro**, **Next.js**, Node, Hono, Larave
 ![endpoints](https://img.shields.io/badge/endpoints-18-success)
 ![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-![last update](https://img.shields.io/badge/last%20update-2026--08--10-informational)
+![last update](https://img.shields.io/badge/last%20update-2026--08--17-informational)
 ![couriers](https://img.shields.io/badge/couriers-JNE%20·%20SiCepat%20·%20J%26T%20·%20Anteraja%20·%20Ninja%20·%20Lion%20·%20IDExpress%20·%20SAP-lightgrey)
 
 </div>
@@ -27,9 +27,9 @@ Mengantar.com is an Indonesian logistics aggregator: one API for multi-courier s
 
 As an **Official Partner Mengantar**, [ongki.pro](https://ongki.pro) maintains this documentation to help teams integrate Mengantar into storefronts, headless commerce projects, and backend systems.
 
-> **Verified:** endpoints, parameters, and response shapes here are matched against the official docs (`app.mengantar.com/docs`) and **verified live against the production API** (read-only, 2026-07-03; **re-verified 2026-07-19** during a live integration — base URL, `courier=all` per-courier map, no ETD field). Recent **2026-08-05 & 2026-08-10 audits** confirmed strict Sandbox limits mapping, WooCommerce origin validation rules, complete PRD integration specs, and client test suites. Operational behaviour (caching, validation) is derived from the WooCommerce plugin and marked **[plugin]**.
+> **Evidence:** the official documentation snapshot was rechecked on **2026-08-17** across all 18 operations. Production observations remain dated **2026-07-03** and **2026-07-19** (read-only: base URL, `courier=all` per-courier map, and no ETD field). Operational behavior derived from Woo Mengantar v1.0.32 is marked **[plugin]**; unresolved or conflicting behavior is marked **[verifikasi]**. The 2026-08-17 audit did not execute write endpoints.
 
-> **API access:** this repository does not provide API keys. To request production/sandbox API access, contact the official Mengantar platform/team. After you receive a key, run the smoke tests in [09-curl-examples](docs/09-curl-examples.md) and complete the [10-verification-checklist](docs/10-verification-checklist.md).
+> **API access:** this repository does not provide API keys. Request production/sandbox access from the official Mengantar platform/team. After receiving a key, inject it through a secret manager and run the read-only `make smoke`; use [manual cURL examples](docs/09-curl-examples.md) for write/delete checks only against a confirmed sandbox, then record sanitized evidence in the [verification checklist](docs/10-verification-checklist.md).
 
 > **Language note:** this README is written in English for public discoverability. The detailed integration documents may remain in Indonesian where it is more practical for implementation teams.
 
@@ -114,13 +114,14 @@ sequenceDiagram
 .
 ├── README.md                 # this file
 ├── AGENTS.md  (= CLAUDE.md)   # contract for AI coding agents (integration golden rules)
-├── Makefile                  # terminal entrypoint: make check | client-check | smoke
+├── Makefile                  # terminal entrypoint: make all | smoke
+├── package.json · package-lock.json # pinned validation toolchain
 ├── docs/                     # 01–12 canonical documentation
-├── spec/openapi.yaml         # OpenAPI 3.1 — 18 endpoints (codegen)
+├── spec/openapi.yaml         # OpenAPI 3.1 — 18 operations (codegen)
 ├── examples/                 # server-only TypeScript client + usage & recipes
 ├── scripts/                  # check-links.sh (validation) · smoke.sh (read-only API test)
 ├── requests.http             # REST-client file (VS Code / JetBrains)
-├── .env.example              # credential template (→ .env)
+├── .env.example              # application configuration names; never auto-sourced
 └── CONTRIBUTING.md · SECURITY.md · CHANGELOG.md · LICENSE
 ```
 
@@ -130,10 +131,9 @@ sequenceDiagram
 
 **Terminal quick commands:**
 ```bash
-make help          # list commands
-make check         # validate spec + links + hygiene (offline)
-make client-check  # typecheck the TS client (tsc --strict)
-cp .env.example .env && make smoke   # READ-ONLY smoke test against the API (fill key first)
+npm ci --ignore-scripts  # install the pinned validation toolchain without lifecycle scripts
+make all           # OpenAPI lint + links/hygiene + strict TS + contract tests
+make smoke         # READ-ONLY live check; inject MENGANTAR_API_KEY via your secret manager
 ```
 
 ---
@@ -151,7 +151,7 @@ The API is stack-agnostic. You only need server-side HTTP calls.
 | **Serverless** Cloudflare Workers, Vercel, Lambda | Proxy + cache at edge/function layer | Follow server-only pattern |
 | **Database** Supabase/Postgres/MySQL | Shipments model + SQL schema | Data model → [03](docs/03-data-model.md) §0 |
 | **Automation** queue/cron | Async create + tracking polling | Flow → [04](docs/04-how-it-works.md) |
-| **Codegen client** | OpenAPI 3.1, 18 endpoints | [spec/openapi.yaml](spec/openapi.yaml) · typed TS: `examples/mengantar-client.ts` |
+| **Codegen client** | OpenAPI 3.1, 18 operations | [spec/openapi.yaml](spec/openapi.yaml) · typed TS: `examples/mengantar-client.ts` |
 
 Minimum requirements:
 
@@ -167,7 +167,7 @@ Minimum requirements:
 
 | # | File | Contents |
 | --- | --- | --- |
-| 01 | [api-reference](docs/01-api-reference.md) | REST auth, **18 endpoints** (official docs), request/response, error codes X000–X003, connection checks, caching |
+| 01 | [api-reference](docs/01-api-reference.md) | REST auth, **18 operations** (official docs), request/response, error codes X000–X003, connection checks, caching |
 | 02 | [couriers-and-rules](docs/02-couriers-and-rules.md) | Courier mapping, weight/COD limits, fees, volumetric rules, pickup, batch concurrency |
 | 03 | [data-model](docs/03-data-model.md) | Order object (API) + SQL schema, provenance, metadata, area normalisation, import/export columns |
 | 04 | [how-it-works](docs/04-how-it-works.md) | Architecture and workflow: checkout→rate, order→shipment, origin optimisation, polling, security |
@@ -179,7 +179,7 @@ Minimum requirements:
 | 10 | [verification-checklist](docs/10-verification-checklist.md) | Verification steps + what is already confirmed live |
 | 11 | [prd](docs/11-prd.md) | Product requirements, goals/non-goals, requirements, and verification matrix |
 | 12 | [development](docs/12-development.md) | Development workflow, invariants, validation, and release checklist |
-| — | [spec/openapi.yaml](spec/openapi.yaml) | OpenAPI 3.1 spec — 18 endpoints, matched to official docs |
+| — | [spec/openapi.yaml](spec/openapi.yaml) | OpenAPI 3.1 spec — 18 operations, matched to the official snapshot and explicitly sourced runtime evidence |
 
 Recommended reading order: `01 → 02 → 03 → 04`, then choose `05` or `06` based on your stack. Use `07–12` as implementation, verification, and maintenance references.
 
@@ -187,21 +187,21 @@ Recommended reading order: `01 → 02 → 03 → 04`, then choose `05` or `06` b
 
 ## Quick start after you receive an API key
 
+Keep the key in your server-side secret manager. Inject `MENGANTAR_API_KEY` only into the
+`make smoke` process; the script does not parse or source `.env`.
+
 ```bash
-export MGT_KEY="YOUR_API_KEY"
-export MGT_BASE="https://api-public.mengantar.com"
-export MGT_PREFIX="$MGT_BASE/api/public/$MGT_KEY"
+# 1) Validate the repository without credentials
+npm ci --ignore-scripts
+make all
 
-# 1) Validate key by running a shipping estimate smoke test
-curl -sS "$MGT_PREFIX/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destination_id=5fc62de8f8f44b34aa4bdc58&courier=all&weight=1" | jq .success
-
-# 2) Search destination → 3) estimate rate → 4) create shipment
-# See docs/09-curl-examples.md for the full sequence, or run: make smoke
+# 2) With MENGANTAR_API_KEY injected by your secret manager
+make smoke
 ```
 
 ### Or use the typed TypeScript client
 
-Server-only, zero-dependency, covers all 18 endpoints ([examples/](examples/README.md)):
+Server-only, zero-runtime-dependency, covers all 18 operations ([examples/](examples/README.md)):
 
 ```ts
 import { MengantarClient } from "./examples/mengantar-client";
@@ -215,20 +215,36 @@ const rates    = await mgt.estimate({ originId, destinationId: dest._id, courier
 
 ---
 
+## Evidence and source precedence
+
+1. **Official contract:** [Mengantar Public API Documentation](https://app.mengantar.com/docs/),
+   snapshot retrieved **2026-08-17**. Endpoint count, documented parameters, examples, and error
+   codes are compared against this snapshot.
+2. **Observed runtime:** sanitized, read-only production checks from **2026-07-03** and
+   **2026-07-19**, recorded in [the verification checklist](docs/10-verification-checklist.md).
+   No credentialed live call was made for the 2026-08-17 documentation audit.
+3. **Compatibility evidence:** Woo Mengantar plugin v1.0.32. These claims are marked **[plugin]**
+   and must be reconfirmed when account or plugin behavior matters.
+
+Official docs win for the published contract. Observed responses win for the tested account and
+date. A discrepancy is documented, not silently resolved; unverified behavior stays **[verifikasi]**.
+
+---
+
 ## Important implementation notes
 
 - Tracking number is `cnote_no` (not `tracking_id`); create-order `data` is an **array**, but keep the top-level `batch_id` and `errors[]` for unpaid and partial-failure handling.
-- **Two different "origin" IDs** (live-verified): estimate `origin_id`/`destination_id` are **area `_id`s** (from `/address/search`, or a pickup's `PICKUP_AUTOFILL`) — *not* the pickup-address `_id`. Create-order `pickup.address_id` and `/time?address=` use the **pickup-address `_id`**. Mixing them up returns `success:false`.
-- Courier names for create-order use Mengantar's official casing: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`. Estimate `courier` defaults to `JNE`.
-- **`GET /order/estimate?courier=all` returns `data` as a per-courier map** (keyed by courier name), **not an array** (live-verified 2026-07-19) — iterate with `Object.entries(data)`. It contains **prices only, no ETD/delivery-time field**; supply your own delivery-time labels.
+- **Two different "origin" IDs** (live-verified 2026-07-03/2026-07-19): estimate `origin_id`/`destination_id` are **area `_id`s** (from `/address/search`, or a pickup's `PICKUP_AUTOFILL`) — *not* the pickup-address `_id`. Create-order `pickup.address_id` uses the **pickup-address `_id`**. The official `GET /time` example has no query; the optional `/time?address=` filter uses the pickup-address `_id` and is live-verified.
+- Courier names documented for create-order are `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`. Estimate `courier` defaults to `JNE`.
+- **`GET /order/estimate?courier=all` returns `data` as a per-courier map** (keyed by courier name), **not an array** (live-verified 2026-07-19) — iterate with `Object.entries(data)`. The tested account response contained prices but no ETD field.
 - `POST /time` uses `date` in **`mm-dd-yyyy`** (not ISO) plus fixed `9:00`–`18:00` slots.
 - **JT Premium / Ninja / SiCepat**: one batch per account — parallel batches return `409 Conflict`.
 - COD estimate param is **`COD_AMOUNT`** (uppercase) = item value + shipping; low balance → order stays **unpaid** (pay via `/order/pay-unpaid`).
-- **Sandbox Traps (Critical):** JNE will strictly fail `POST /order` if the origin is outside Jakarta (`Content not confirm our security Policy`). SAP Sandbox blocks COD entirely and restricts routes to Jakarta → Jakarta only. Do not confuse this with a bug in your code.
+- **Sandbox behavior [verifikasi]:** prior integration evidence reports JNE create-order rejection outside Jakarta and SAP non-COD Jakarta → Jakarta restrictions. Reconfirm with the current sandbox account before relying on these limits.
 - API requests arriving from WooCommerce origins **must** include the header `x-client-source: woocommerce`.
 - API area names may not be standardised; normalisation is required.
-- No dedicated key-validation endpoint; use a safe estimate smoke test.
-- Webhook availability is unconfirmed; design tracking with polling/backoff.
+- No dedicated key-validation endpoint is documented; use a safe estimate smoke test.
+- No webhook appears in the 2026-08-17 official snapshot; use polling/backoff as the documented baseline and reconfirm before assuming webhooks are unavailable.
 
 ---
 

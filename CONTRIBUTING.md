@@ -8,31 +8,31 @@ bisa membangun integrasi Mengantar tanpa menebak. Baca **[AGENTS.md](AGENTS.md)*
 ```bash
 git clone https://github.com/ongkipro/mengantar-documentation
 cd mengantar-documentation
-cp .env.example .env     # isi MENGANTAR_API_KEY bila mau smoke-test
-make help                # daftar perintah
+npm ci --ignore-scripts
+make help
 ```
 
-Prasyarat: `bash`, `python3` + `pyyaml` (validasi spec), `jq` (smoke-test), `node`/`npx` (typecheck client).
+Prasyarat: Node.js `>=20.19 <21` atau `>=22.12`, npm 10+, dan `bash`; `curl` + `jq` hanya untuk smoke test.
 
 ## Alur kerja
 
 ```bash
-make check          # wajib: validasi spec + link + tidak ada key bocor
-make client-check   # typecheck examples/mengantar-client.ts (tsc --strict)
-make smoke          # opsional: smoke-test READ-ONLY (butuh .env)
-make all            # yang dijalankan CI
+make all            # sama dengan CI: spec + links/hygiene + strict TS + contract tests
+make smoke          # opsional, READ-ONLY; key diinjeksikan secret manager ke environment
 ```
 
-CI (`.github/workflows/ci.yml`) menjalankan `check` + `client-check` di tiap push/PR.
+CI (`.github/workflows/ci.yml`) menjalankan `npm ci --ignore-scripts` + `make all` di tiap push/PR.
+Smoke test tidak membaca `.env` dan tidak pernah menjalankan operasi tulis.
 
 ## Aturan
 
-1. **Sumber kebenaran = docs resmi + `docs/`.** Beri tanda kepercayaan tiap fakta baru:
-   default = docs resmi, `[plugin]` = dari plugin WooCommerce, `[verifikasi]` = belum diuji akun asli.
+1. **Sumber harus eksplisit.** Kontrak publik = snapshot docs resmi; response live berlaku hanya
+   untuk akun/environment/tanggal; fakta plugin diberi `[plugin]`; yang belum pasti `[verifikasi]`.
 2. **Konsistensi lintas file.** Endpoint/param/enum hidup di beberapa tempat —
    `docs/01`, `docs/07`, `spec/openapi.yaml`, `examples/mengantar-client.ts`, `requests.http`.
-   Ubah satu → sinkronkan semua, lalu `make check && make client-check`.
-3. **Jangan pernah commit kredensial.** Hanya placeholder. `.env` sudah di-gitignore.
+   Ubah satu → sinkronkan semua, lalu `make all`.
+3. **Jangan pernah commit kredensial.** `.env.example` hanya nama konfigurasi dan placeholder;
+   `.env` serta `.env.*` lain diabaikan Git.
 4. **Casing param persis** (`COD_AMOUNT`), nama kurir persis, `date` = `mm-dd-yyyy`. Lihat AGENTS.md.
 5. **Bahasa Indonesia** untuk dokumen internal (README publik boleh campur EN). Ikuti gaya file yang disunting.
 6. **Footer** tiap file `docs/` (`<sub>… ../README.md …</sub>`) dipertahankan.

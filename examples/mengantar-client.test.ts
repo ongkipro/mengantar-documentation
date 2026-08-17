@@ -43,6 +43,22 @@ test("write methods send JSON and never leak client-only request options", async
   });
 });
 
+test("onRequest redacts both the path credential and sensitive query values", async () => {
+  const logged: string[] = [];
+  const client = new MengantarClient({
+    apiKey: "test-secret",
+    onRequest: ({ url }) => logged.push(url),
+    fetchImpl: async () => new Response(JSON.stringify({ success: true, data: {} })),
+  });
+
+  await client.getReceiverScore("081234567890");
+
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /\/api\/public\/\*\*redacted\*\*\/getReceiverScoreByNumberUser/);
+  assert.equal(new URL(logged[0]).searchParams.get("search"), "**redacted**");
+  assert.doesNotMatch(logged[0], /test-secret|081234567890/);
+});
+
 test("listInvoices preserves top-level count and balance", async () => {
   const client = new MengantarClient({
     apiKey: "test-key",
@@ -53,6 +69,31 @@ test("listInvoices preserves top-level count and balance", async () => {
   assert.equal(invoices.count, 2);
   assert.equal(invoices.balance, 150_000);
   assert.deepEqual(invoices.data, []);
+});
+
+test("query helpers preserve official filters and JSON-encode object parameters", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const client = new MengantarClient({
+    apiKey: "test-key",
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return new Response(JSON.stringify({ success: true, data: [] }));
+    },
+  });
+  const range = { startDate: "2026-08-01T00:00:00.000Z", endDate: "2026-08-31T23:59:59.999Z" };
+
+  await client.listPickupTimes();
+  await client.listInvoices({ keyword: "INV-42", dateRange: range, invoiceFilter: "typePayment" });
+  await client.getOrders({ status: { DELIVERED: true }, dateRange: range });
+  await client.listBatches({ page: "1", dateRange: range });
+  await client.deleteOrders({ orderIds: ["ORDER-42"], courier: "JNE" });
+
+  assert.equal(new URL(calls[0].url).search, "");
+  assert.equal(new URL(calls[1].url).searchParams.get("keyword"), "INV-42");
+  assert.deepEqual(JSON.parse(new URL(calls[1].url).searchParams.get("dateRange")!), range);
+  assert.deepEqual(JSON.parse(new URL(calls[2].url).searchParams.get("status")!), { DELIVERED: true });
+  assert.deepEqual(JSON.parse(new URL(calls[3].url).searchParams.get("dateRange")!), range);
+  assert.deepEqual(JSON.parse(String(calls[4].init?.body)), { orderIds: ["ORDER-42"], courier: "JNE" });
 });
 
 test("createOrder preserves batch metadata and partial errors", async () => {

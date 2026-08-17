@@ -1,17 +1,21 @@
-# Contoh cURL (Smoke Test)
+# Contoh cURL Manual
 
-Perintah siap-pakai untuk menguji tiap endpoint begitu API key tersedia. Ganti placeholder.
-Base URL memakai host dari plugin (**konfirmasi dengan tim Mengantar**); untuk sandbox ganti host.
+Perintah manual untuk menguji endpoint setelah API key tersedia. Base URL produksi di bawah
+live-verified; host sandbox tetap harus dikonfirmasi dengan tim Mengantar.
+
+> ⚠️ **Batas keselamatan:** `make smoke` adalah satu-satunya smoke otomatis dan selalu read-only.
+> Contoh bertanda `[WRITE]`/`[DELETE]` hanya boleh dijalankan manual terhadap sandbox terkonfirmasi.
+> Jangan mengetik key literal ke shell history, mengaktifkan `set -x`, atau menyimpan response mentah.
+
+Contoh mengasumsikan secret manager sudah menginjeksikan `MGT_KEY` ke shell pendek yang tepercaya:
 
 ```bash
-# Set sekali di shell-mu (JANGAN commit nilai aslinya)
-export MGT_KEY="GANTI_DENGAN_API_KEY"
-export MGT_BASE="https://api-public.mengantar.com"     # konfirmasi base URL final
-export MGT_PREFIX="$MGT_BASE/api/public/$MGT_KEY"
+MGT_BASE="https://api-public.mengantar.com"
+MGT_PREFIX="$MGT_BASE/api/public/$MGT_KEY"
 ```
 
-> Tips: tambahkan `-sS | jq` untuk output rapi (`jq` sudah ada di mesin). Simpan response ke file
-> untuk mengisi [10-verification-checklist.md](10-verification-checklist.md).
+Sanitasi key dan data pribadi sebelum menyalin bukti minimum ke
+[10-verification-checklist.md](10-verification-checklist.md).
 
 ## 1. Validasi key (estimate dummy) — [plugin]
 ```bash
@@ -31,7 +35,7 @@ dari alamat pickup (`GET /address`), bukan `_id` alamat pickup.
 curl -sS "$MGT_PREFIX/address" | jq '.data[] | {pickup_address_id:._id, origin_wilayah_id:.PICKUP_AUTOFILL, name:.PICKUP_NAME, addr:.PICKUP_ADDRESS}'
 ```
 
-## 4. Buat / update alamat pickup (JSON)
+## 4. [WRITE] Buat / update alamat pickup (JSON)
 ```bash
 curl -sS -X POST "$MGT_PREFIX/address" \
   -H "Content-Type: application/json" \
@@ -45,7 +49,7 @@ curl -sS -X POST "$MGT_PREFIX/address" \
 # Tambahkan "_id":"PICKUP_ADDRESS_ID" untuk update
 ```
 
-## 5. Jadwal pickup
+## 5. Jadwal pickup (list + [WRITE] tambah slot)
 ```bash
 # List slot untuk satu alamat pickup
 curl -sS "$MGT_PREFIX/time?address=PICKUP_ADDRESS_ID" | jq
@@ -90,7 +94,7 @@ curl -sS "$MGT_PREFIX/invoices" | jq '{count, balance, first: .data[0]}'
 curl -sS "$MGT_PREFIX/my-users" | jq '.data[] | {id:._id, name}'
 ```
 
-## 10. Buat shipment (JSON)
+## 10. [WRITE] Buat shipment (JSON)
 > ⚠️ Membuat shipment ASLI. Pakai **sandbox** untuk testing.
 ```bash
 curl -sS -X POST "$MGT_PREFIX/order" \
@@ -119,7 +123,7 @@ Resi ada di `.data[0].cnote_no`, status pembayaran di `.data[0].isPaid`, order i
 `.data[0].ORDER_ID`, dan batch di `.data[0].batch_id`/`.batch_id`.
 > JT Premium / Ninja / SiCepat: **jangan** kirim batch paralel — gabung ke satu request (hindari `409`).
 
-## 11. Bayar order unpaid (saldo kurang saat create)
+## 11. [WRITE] Bayar order unpaid (saldo kurang saat create)
 ```bash
 curl -sS -X POST "$MGT_PREFIX/order/pay-unpaid" \
   -H "Content-Type: application/json" \
@@ -136,14 +140,14 @@ curl -sS "$MGT_PREFIX/order?tracking_id=CNOTE_NO" | jq
 curl -sS "$MGT_PREFIX/order?page=1&size=50&courier=JNE&cod=NON_COD&category=collected_customer" | jq '.data | length'
 ```
 
-## 13. Hapus order
+## 13. [DELETE] Hapus order
 ```bash
 curl -sS -X DELETE "$MGT_PREFIX/order" \
   -H "Content-Type: application/json" \
   -d '{"courier":"JNE","ids":["ORDER_OBJECT_ID_1","ORDER_OBJECT_ID_2"]}' | jq
 ```
 
-## 14. Batch
+## 14. Batch (list + [DELETE] hapus batch)
 ```bash
 # List batch
 curl -sS "$MGT_PREFIX/batch?page=1&size=50&courier=JNE" | jq '.data | length'
@@ -161,7 +165,7 @@ curl -sS "$MGT_PREFIX/getReceiverScoreByNumberUser?search=8123456789" | jq '.dat
 
 ---
 
-## Urutan smoke-test end-to-end (disarankan, sandbox)
+## Urutan verifikasi manual end-to-end (sandbox terkonfirmasi)
 
 ```
 1) #1  validasi key                     → success:true
@@ -177,7 +181,8 @@ curl -sS "$MGT_PREFIX/getReceiverScoreByNumberUser?search=8123456789" | jq '.dat
 11) #15 receiver score        → validasi sebelum kirim COD besar
 ```
 
-Rekam tiap response apa adanya ke [10-verification-checklist.md](10-verification-checklist.md)
+Simpan response mentah hanya di lokasi privat sementara. Masukkan bukti minimum yang sudah
+meredaksi key dan data pribadi ke [10-verification-checklist.md](10-verification-checklist.md)
 untuk memvalidasi/melengkapi skema di [01-api-reference.md](01-api-reference.md).
 
 ---

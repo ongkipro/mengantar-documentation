@@ -4,7 +4,8 @@ Kode contoh server-only untuk integrasi Mengantar. **Bukan** paket npm — salin
 
 | File | Isi |
 |------|-----|
-| [`mengantar-client.ts`](mengantar-client.ts) | Client TypeScript tanpa dependensi (fetch global). Semua 18 endpoint, typed, key di path, error terstruktur. |
+| [`mengantar-client.ts`](mengantar-client.ts) | Client TypeScript tanpa runtime dependency (fetch global). Semua 18 operasi, typed, key di path, error terstruktur. |
+| [`mengantar-client.test.ts`](mengantar-client.test.ts) | Contract tests untuk payload, query JSON, redaksi, dan response envelope. |
 
 Untuk contoh berbasis framework (route handler / server endpoint), lihat
 [`../docs/05-integration-astro.md`](../docs/05-integration-astro.md) dan
@@ -65,10 +66,12 @@ try {
 
 ## Aturan yang sudah di-handle client
 
-- Key di **path** + **redaksi** key otomatis di `onRequest`.
+- Key di **path** + redaksi otomatis untuk key dan seluruh nilai query di `onRequest`.
 - `COD_AMOUNT` (huruf besar) dari param `codAmount`.
 - `POST /time` `date` divalidasi lalu dikonversi ke **`mm-dd-yyyy`** via `toMengantarDate()`.
-- Semua write endpoint memakai JSON sesuai kontrak resmi.
+- `GET /time` dapat dipanggil tanpa query resmi atau dengan filter pickup address `_id` yang live-verified.
+- Query objek seperti `dateRange` dan `status` di-JSON-encode sebelum URL encoding.
+- Semua write endpoint memakai JSON sesuai kontrak resmi; delete order menerima `ids` atau `orderIds`.
 - Opsi `clientSource: "woocommerce"` menyuntikkan header `x-client-source` otomatis.
 - `success:false` / HTTP non-2xx → `throw MengantarError` dengan `.code` (X000–X003 / 409).
 - `createOrder()` mempertahankan envelope: order ada di `.data[]`, sedangkan `.batch_id` dan `.errors` tetap tersedia untuk unpaid/partial failure.

@@ -7,34 +7,35 @@
 ## Apa repo ini
 
 Dokumentasi + toolkit integrasi **API Mengantar** (agregator kurir Indonesia: cek ongkir, buat shipment,
-pickup, tracking). **Ini bukan aplikasi** — tidak ada build/test/runtime. Isi:
+pickup, tracking). **Ini bukan aplikasi**; client tidak punya runtime dependency, sedangkan validator
+development dipin di lockfile. Isi:
 
 ```
 .
 ├── README.md              # ringkasan + peta dokumen (untuk manusia)
 ├── AGENTS.md / CLAUDE.md  # file ini — kontrak agent
-├── Makefile               # entrypoint: make check | client-check | smoke | all
-├── docs/                  # 01–10, dokumentasi kanonik (baca sesuai kebutuhan)
-├── spec/openapi.yaml      # OpenAPI 3.1, 18 endpoint — sumber untuk codegen client
-├── examples/              # client TypeScript no-dep (package.json + tsconfig) + cara pakai
-├── scripts/               # check-links.sh (validasi) · smoke.sh (uji API read-only)
+├── Makefile               # entrypoint: make all | smoke
+├── package.json           # validator development; versi dikunci package-lock.json
+├── docs/                  # 01–12, dokumentasi kanonik (baca sesuai kebutuhan)
+├── spec/openapi.yaml      # OpenAPI 3.1, 18 operasi
+├── examples/              # client TypeScript tanpa runtime dependency + contract tests
+├── scripts/               # link/secret checks · smoke read-only
 ├── requests.http          # REST-client file (VS Code / JetBrains)
-├── .env.example           # template kredensial (→ .env, gitignored)
+├── .env.example           # nama konfigurasi aplikasi; tidak pernah auto-sourced
 └── assets/                # banner
 ```
 
 ## Sumber kebenaran & tingkat kepercayaan
 
-Tiap klaim di `docs/` ditandai tingkat kepercayaannya — **hormati tanda ini**:
-
 | Tanda | Arti | Boleh diandalkan? |
 |-------|------|-------------------|
-| (default) | Dicocokkan dengan **docs resmi** `app.mengantar.com/docs` | ✅ Ya |
-| **[plugin]** | Berasal dari pembedahan plugin WooCommerce *Woo Mengantar* v1.0.32 | ⚠️ Pola operasional; verifikasi nilai |
-| **[verifikasi]** | Belum dipastikan; perlu akun/sandbox asli | ❌ Jangan diandalkan buta |
+| (default) | Dicocokkan dengan snapshot **docs resmi** bertanggal | Ya, untuk kontrak publik |
+| **live-verified YYYY-MM-DD** | Response akun/environment yang disanitasi | Hanya untuk scope dan tanggal itu |
+| **[plugin]** | Berasal dari Woo Mengantar v1.0.32 | Pola kompatibilitas; verifikasi nilai |
+| **[verifikasi]** | Belum dipastikan | Jangan diandalkan buta |
 
-Kalau menambah fakta baru, **selalu beri tanda sumbernya**. Jangan turunkan fakta `[verifikasi]`
-menjadi fakta pasti tanpa bukti dari akun asli.
+Konflik docs resmi vs runtime harus ditulis eksplisit. Jangan menaikkan `[plugin]`/`[verifikasi]`
+menjadi fakta pasti tanpa bukti yang mencatat akun, environment, dan tanggal.
 
 ## Aturan emas integrasi (jangan dilanggar)
 
@@ -86,20 +87,20 @@ menjadi fakta pasti tanpa bukti dari akun asli.
 ### Pengecekan sebelum selesai (wajib)
 
 ```bash
-make check          # validasi OpenAPI + semua link internal + tidak ada key bocor
-make client-check   # typecheck examples/mengantar-client.ts (tsc --strict)
-# (opsional, butuh .env berisi MENGANTAR_API_KEY)
+npm ci --ignore-scripts
+make all            # OpenAPI lint + link/hygiene + strict TS + contract tests; sama dengan CI
+# opsional; inject key lewat secret manager, script tidak membaca .env
 make smoke          # smoke-test READ-ONLY ke API nyata
 ```
 
-`make all` = `check` + `client-check` (sama dengan yang dijalankan CI di `.github/workflows/ci.yml`).
-Jangan tandai tugas selesai bila `make check`/`make client-check` masih merah.
+Jangan tandai tugas selesai bila `make all` masih merah.
 
 ## Yang BUKAN ada di sini
 
 - Tidak ada API key / kredensial (minta ke tim Mengantar).
-- Tidak ada webhook resmi (status via **polling** `/order?order_id=`) — lihat `docs/10` bila ingin cek.
-- Base URL produksi/sandbox berasal dari plugin — **konfirmasi** sebelum dipakai produksi.
+- Tidak ada webhook pada snapshot docs resmi 2026-08-17; polling adalah baseline terdokumentasi,
+  tetapi ketersediaan webhook tetap perlu dikonfirmasi ke Mengantar.
+- Base URL sandbox berasal dari plugin dan perlu dikonfirmasi sebelum dipakai.
 
 ---
 <sub>oleh <a href="https://ongki.pro">ongki.pro</a> — Official Partner Mengantar</sub>

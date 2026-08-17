@@ -1,16 +1,18 @@
 openapi: 3.1.0
 info:
   title: Mengantar Public API
-  version: 0.2.0
+  version: 0.3.0
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
   description: >-
     Spec Mengantar Public API. Endpoint, parameter, dan bentuk response dicocokkan dengan
-    dokumentasi resmi (https://app.mengantar.com/docs/). Beberapa detail perilaku (caching,
-    validasi pra-kirim, base URL) berasal dari pembedahan plugin WooCommerce "Woo Mengantar"
-    v1.0.32 dan ditandai di deskripsi. Autentikasi: API key di PATH (`/api/public/{apiKey}`),
-    bukan header. Konfirmasi base URL final + skema tepercaya via 10-verification-checklist.md.
+    dokumentasi resmi (https://app.mengantar.com/docs/), snapshot diambil 2026-08-17.
+    Detail yang tidak ada di docs resmi ditandai sebagai hasil observasi produksi read-only
+    (2026-07-03/2026-07-19) atau pembedahan plugin WooCommerce "Woo Mengantar" v1.0.32.
+    Docs resmi menjadi sumber utama; observasi akun menjelaskan perilaku runtime; detail plugin
+    adalah panduan kompatibilitas yang wajib dikonfirmasi. Autentikasi memakai API key di PATH
+    (`/api/public/{apiKey}`), bukan header.
 servers:
   - url: https://api-public.mengantar.com
     description: Produksi (dari plugin — konfirmasi)
@@ -69,15 +71,24 @@ paths:
             schema: { $ref: '#/components/schemas/PickupAddressInput' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
-        '200': { $ref: '#/components/responses/Envelope' }
+        '200':
+          description: Alamat pickup yang dibuat atau diperbarui
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PickupAddress' }
 
   /api/public/{apiKey}/time:
     get:
       operationId: listPickupTimes
-      summary: List jadwal pickup untuk satu origin
+      summary: List jadwal pickup
+      description: Docs resmi menampilkan GET /time tanpa query. Query address memakai _id alamat pickup dan terverifikasi pada akun produksi 2026-07-03.
       parameters:
         - $ref: '#/components/parameters/ApiKey'
-        - { name: address, in: query, required: true, schema: { type: string } }
+        - { name: address, in: query, required: false, schema: { type: string }, description: 'Opsional; filter memakai _id alamat pickup dari GET /address' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -128,8 +139,8 @@ paths:
         - name: courier
           in: query
           schema: { type: string, default: JNE, enum: [JNE, SiCepat, Sap, iDexpress, JT, Ninja, lion, anteraja, all] }
-        - { name: weight, in: query, schema: { type: number, default: 1 }, description: kg }
-        - { name: COD_AMOUNT, in: query, schema: { type: integer }, description: 'IDR; = Nilai Barang + Ongkir' }
+        - { name: weight, in: query, schema: { type: number, exclusiveMinimum: 0, default: 1 }, description: kg }
+        - { name: COD_AMOUNT, in: query, schema: { type: number, minimum: 0 }, description: 'IDR; Nilai Barang + Ongkir, dipakai menghitung fee COD' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -154,8 +165,8 @@ paths:
       parameters:
         - { name: origin_id, in: query, required: true, schema: { type: string } }
         - { name: destination_id, in: query, required: true, schema: { type: string } }
-        - { name: weight, in: query, schema: { type: number } }
-        - { name: COD_AMOUNT, in: query, schema: { type: integer } }
+        - { name: weight, in: query, schema: { type: number, exclusiveMinimum: 0, default: 1 } }
+        - { name: COD_AMOUNT, in: query, schema: { type: number, minimum: 0 } }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -175,7 +186,7 @@ paths:
       parameters:
         - { name: origin_id, in: query, required: true, schema: { type: string } }
         - { name: destination_id, in: query, required: true, schema: { type: string } }
-        - { name: weight, in: query, schema: { type: number } }
+        - { name: weight, in: query, schema: { type: number, exclusiveMinimum: 0, default: 1 } }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -228,10 +239,11 @@ paths:
       summary: List invoice + saldo akun
       parameters:
         - $ref: '#/components/parameters/ApiKey'
-        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: size, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: dateRange, in: query, schema: { type: string }, description: 'JSON {"startDate":"…","endDate":"…"}' }
-        - { name: invoiceFilter, in: query, schema: { type: string }, description: 'Jenis invoice; gunakan all atau kosong untuk semua' }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1 }, description: 'default: semua record' }
+        - { name: keyword, in: query, schema: { type: string }, description: 'Cari invoice number, ORDER_ID, cnote_no, atau amount' }
+        - { name: dateRange, in: query, schema: { type: string }, description: 'JSON {"startDate":"…","endDate":"…"} dalam ISO 8601' }
+        - { name: invoiceFilter, in: query, schema: { type: string, enum: [typeWithdraw, typeAddBalance, typePayment, typeReconciliation, typeRefund, all] }, description: 'Jenis invoice; all atau kosong untuk semua' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -242,7 +254,7 @@ paths:
                 allOf:
                   - $ref: '#/components/schemas/Envelope'
                   - properties:
-                      data: { type: array, items: { type: object, additionalProperties: true } }
+                      data: { type: array, items: { $ref: '#/components/schemas/Invoice' } }
                       count: { type: integer }
                       balance: { type: integer, description: 'saldo akun (IDR)' }
 
@@ -275,19 +287,19 @@ paths:
         - $ref: '#/components/parameters/ApiKey'
         - { name: order_id, in: query, schema: { type: string } }
         - { name: tracking_id, in: query, schema: { type: string } }
-        - { name: page, in: query, schema: { type: string } }
-        - { name: size, in: query, schema: { type: string } }
-        - { name: courier, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, default: 50 } }
+        - { name: courier, in: query, schema: { type: string, enum: [JNE, SiCepat, Sap, iDexpress, JT, Ninja, lion, anteraja] } }
         - { name: batch, in: query, schema: { type: string } }
         - { name: cod, in: query, schema: { type: string, enum: [COD, NON_COD] } }
-        - { name: status, in: query, schema: { type: string }, description: 'status dipisah koma atau objek {"DELIVERED":true}' }
-        - { name: category, in: query, schema: { type: string, enum: [collected_customer, yet_to_collect, need_attention, rts, pending_pickup, redelivery, undelivered, delivery_problem, over_sla, already_been_undelivered, been_undelivered_wo_ticket, been_undelivered_wo_proof] } }
-        - { name: ticketFilter, in: query, schema: { type: string, enum: [withticket, without, open, replied] } }
-        - { name: receiverFilter, in: query, schema: { type: string } }
-        - { name: no_update_after_hour, in: query, schema: { type: string } }
-        - { name: no_update_after_day, in: query, schema: { type: string } }
-        - { name: dateRange, in: query, schema: { type: string }, description: 'JSON {"startDate":"…","endDate":"…"}' }
-        - { name: reseller, in: query, schema: { type: boolean } }
+        - { name: status, in: query, schema: { type: string }, description: 'JSON object sebagai string, mis. {"DELIVERED":true}' }
+        - { name: category, in: query, schema: { type: string, enum: [collected_customer, yet_to_collect, need_attention, rts, pending_pickup, redelivery, undelivered, delivery_problem, over_sla, already_been_undelivered, been_undelivered_wo_ticket, been_undelivered_wo_proof] }, description: '[plugin] Filter UI Woo Mengantar v1.0.32' }
+        - { name: ticketFilter, in: query, schema: { type: string, enum: [withticket, without, open, replied] }, description: '[plugin] Filter UI Woo Mengantar v1.0.32' }
+        - { name: receiverFilter, in: query, schema: { type: string }, description: '[plugin] Filter UI Woo Mengantar v1.0.32' }
+        - { name: no_update_after_hour, in: query, schema: { type: string }, description: '[plugin] Filter UI Woo Mengantar v1.0.32' }
+        - { name: no_update_after_day, in: query, schema: { type: string }, description: '[plugin] Filter UI Woo Mengantar v1.0.32' }
+        - { name: dateRange, in: query, schema: { type: string }, description: 'JSON {"startDate":"…","endDate":"…"} dalam ISO 8601' }
+        - { name: reseller, in: query, schema: { type: boolean }, description: '[plugin] Filter UI Woo Mengantar v1.0.32' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -303,14 +315,24 @@ paths:
       summary: Hapus order (by ids / orderIds). Anteraja hanya setelah 5 menit.
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
+              oneOf:
+                - required: [ids]
+                  properties:
+                    ids: {}
+                    orderIds: false
+                - required: [orderIds]
+                  properties:
+                    ids: false
+                    orderIds: {}
               properties:
-                courier: { type: string }
-                ids: { type: array, items: { type: string }, description: array _id order }
-                orderIds: { type: array, items: { type: string }, description: '(opsional) array ORDER_ID; jangan bersama ids' }
+                courier: { type: string, enum: [JNE, SiCepat, Sap, iDexpress, JT, Ninja, lion, anteraja] }
+                ids: { type: array, minItems: 1, items: { type: string }, description: array _id order }
+                orderIds: { type: array, minItems: 1, items: { type: string }, description: 'array ORDER_ID; jangan bersama ids' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200': { $ref: '#/components/responses/Envelope' }
@@ -321,6 +343,7 @@ paths:
       summary: Bayar order unpaid dalam satu batch
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -365,18 +388,27 @@ paths:
       summary: List batch
       parameters:
         - $ref: '#/components/parameters/ApiKey'
-        - { name: page, in: query, schema: { type: string } }
-        - { name: size, in: query, schema: { type: string } }
-        - { name: courier, in: query, schema: { type: string } }
-        - { name: dateRange, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: string, pattern: '^[1-9]\d*$' } }
+        - { name: size, in: query, schema: { type: string, pattern: '^[1-9]\d*$' } }
+        - { name: courier, in: query, schema: { type: string, enum: [JNE, SiCepat, Sap, iDexpress, JT, Ninja, lion, anteraja] } }
+        - { name: dateRange, in: query, schema: { type: string }, description: 'Muncul di contoh URL resmi tetapi tidak tercantum pada tabel query resmi; konfirmasi sebelum bergantung' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
-        '200': { $ref: '#/components/responses/Envelope' }
+        '200':
+          description: Daftar batch
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/BatchRecord' } }
     delete:
       operationId: deleteBatch
       summary: Hapus batch
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -492,7 +524,10 @@ components:
       required: [_id, date, time]
       properties:
         _id: { type: string }
-        date: { type: string, description: Tanggal yang dinormalisasi API }
+        date:
+          oneOf:
+            - { type: string, description: 'POST /time dapat mengembalikan ISO date string' }
+            - { type: number, description: 'GET /time contoh resmi menggunakan epoch milliseconds' }
         time: { type: string }
         status: { type: string }
         isSunday: { type: boolean }
@@ -572,10 +607,10 @@ components:
         customerName: { type: string, minLength: 1 }
         customerPhone: { type: string, pattern: '^\d{10,15}$' }
         parcelContent: { type: string, minLength: 1 }
-        weight: { type: number, minimum: 1, description: 'kg; bila customProducts valid harus = Σ(qty×weight)' }
+        weight: { type: number, exclusiveMinimum: 0, description: 'kg; bila customProducts valid harus = Σ(qty×weight)' }
         quantity: { type: integer, minimum: 1, description: 'bila customProducts valid harus = Σ(qty)' }
-        goodsValue: { type: number, minimum: 0, description: 'NON-COD (eksklusif vs COD)' }
-        COD: { type: number, minimum: 0, description: 'COD = Nilai Barang + Ongkir + COD Fee (eksklusif vs goodsValue)' }
+        goodsValue: { type: number, minimum: 0, description: 'Nilai barang NON-COD (eksklusif vs COD)' }
+        COD: { type: number, minimum: 0, description: 'Total yang ditagih ke penerima; docs resmi tidak menetapkan rumus (eksklusif vs goodsValue)' }
         assignee: { type: string, description: _id dari /my-users }
         destinationMark: { type: string }
         deliveryInstruction: { type: string }
@@ -593,6 +628,43 @@ components:
               qty: { type: number, minimum: 1, description: 'alias: quantity, orderQuantity' }
               price: { type: number, minimum: 0, description: 'alias: harga, regularPrice' }
               weight: { type: number, exclusiveMinimum: 0, description: default 1 }
+
+    Invoice:
+      type: object
+      required: [_id, inv_number, type]
+      properties:
+        _id: { type: string }
+        inv_number: { type: string }
+        status: { type: string }
+        courier: { type: string }
+        type: { type: string }
+        amount: { type: number }
+        total: { type: number }
+        balance: { type: number }
+        balanceAmount: { type: number }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        expiration_date: { type: string, format: date-time }
+        paydAt: { type: string, format: date-time }
+
+    BatchRecord:
+      type: object
+      required: [_id]
+      properties:
+        _id: { type: string }
+        id: { type: string }
+        orders: { type: integer }
+        error: { type: integer }
+        unpaid: { type: integer }
+        delivered: { type: integer }
+        undelivered: { type: integer }
+        rts: { type: integer }
+        active: { type: integer }
+        totalToPay: { type: number }
+        totalToPaySpecial: { type: number }
+        address: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 
     CreateOrderResponse:
       type: object

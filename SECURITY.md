@@ -6,14 +6,17 @@ API Mengantar menaruh key di **path URL** (`/api/public/{API_KEY}/…`). Konseku
 
 - **Server-only.** Jangan pernah memanggil API dari kode browser/klien atau menaruh key di bundle
   frontend, env `NEXT_PUBLIC_*` / `PUBLIC_*`, atau HTML. Selalu proxy lewat server.
-- **Jangan commit key.** Repo ini hanya berisi placeholder. `.env` sudah di-`.gitignore`. Simpan key
-  di secret manager / env server (Vercel, Cloudflare, dst).
-- **Redaksi di log.** Karena key ada di URL, sensor sebelum logging — client contoh melakukannya
-  otomatis (`/api/public/**redacted**`). Jangan log URL mentah.
+- **Jangan commit key.** Repo ini hanya berisi placeholder. `.env` dan `.env.*` diabaikan Git;
+  `.env.example` adalah satu-satunya pengecualian dan wajib tetap placeholder. Simpan key di secret
+  manager / env server (Vercel, Cloudflare, dst).
+- **Jangan source credential file.** `scripts/smoke.sh` hanya membaca process environment dan tidak
+  memuat `.env`; injeksikan satu secret ke process melalui secret manager.
+- **Redaksi di log.** Karena key ada di URL dan query dapat memuat telepon/alamat/order ID, client
+  contoh meredaksi key serta seluruh nilai query di `onRequest`. Jangan log URL request mentah.
 - **Rotasi** bila key pernah bocor; minta key baru ke tim Mengantar.
 
 Bila kamu menemukan key nyata ter-commit (di repo mana pun), anggap **bocor** → rotasi segera.
-`scripts/check-links.sh` menjalankan cek higiene sederhana untuk mendeteksi pola key di repo ini.
+`scripts/check-links.sh` menjalankan heuristic scan; hasil bersih bukan pengganti secret scanning platform.
 
 ## Melaporkan kerentanan
 

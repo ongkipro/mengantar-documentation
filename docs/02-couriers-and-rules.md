@@ -194,16 +194,21 @@ Bila diisi: `orders.weight` harus = Σ(qty × weight) dan `orders.quantity` = Σ
 
 ---
 
-## 8. Mode sandbox & Limitasi
+## 8. Mode sandbox & limitasi **[plugin] [verifikasi]**
 
-- Aktif bila opsi `wm_sandbox_mode = yes` **dan** sandbox API key terisi.
-- Saat aktif: base URL → `https://sandbox.mengantar.com`, dan key produksi diganti sandbox key.
-- Gunakan sandbox untuk semua testing create-order agar tidak membuat shipment asli.
+- Woo Mengantar v1.0.32 mengaktifkan mode lewat `wm_sandbox_mode`, mengganti key, dan memakai
+  `https://sandbox.mengantar.com`. Konfirmasi host dan akses tenant sebelum menyalin pola ini.
+- Semua uji create-order harus memakai sandbox yang sudah dikonfirmasi agar tidak membuat shipment asli.
 
-> ⚠️ **Sandbox Traps (Penting):** Lingkungan Sandbox Mengantar memiliki batasan keras yang sering disangka sebagai bug integrasi. Jangan buang waktu debugging hal berikut:
-> 1. **JNE:** Titik origin *wajib* dari Jakarta. (Akan error `Content not confirm our security Policy` jika dari kota lain).
-> 2. **SAP:** Hanya mengizinkan order Non-COD dengan rute Jakarta → Jakarta. (Akan error `Service tidak ditemukan dalam kontrak`).
-> 3. **Saldo:** Top-up saldo sandbox harus diselesaikan melalui Midtrans Sandbox Simulator sebelum menguji flow non-COD/pay-unpaid.
+> ⚠️ **Perilaku akun sandbox yang perlu diuji ulang:** bukti integrasi sebelumnya melaporkan:
+> 1. **JNE:** origin wajib dari Jakarta; di luar itu mengembalikan
+>    `Content not confirm our security Policy`.
+> 2. **SAP:** hanya Non-COD Jakarta → Jakarta; selain itu
+>    `Service tidak ditemukan dalam kontrak`.
+> 3. **Saldo:** top-up dilakukan melalui Midtrans Sandbox Simulator sebelum flow non-COD/pay-unpaid.
+>
+> Catat akun, tanggal, request yang disanitasi, dan response saat mengonfirmasi. Jangan anggap
+> batas ini berlaku universal atau masih aktif tanpa smoke sandbox terkini.
 
 ---
 
@@ -214,7 +219,8 @@ Bila diisi: `orders.weight` harus = Σ(qty × weight) dan `orders.quantity` = Σ
 3. **Destination**: autocomplete `GET /address/search?keyword=` → ambil `_id` sebagai `destination_id`.
 4. **Estimasi**: `GET /order/estimate?origin_id=&destination_id=&courier=all&weight=` → buang rate dengan `unsupported=true`; untuk COD, buang juga `unsupported_cod=true`.
 5. **Validasi**: cek harga positif serta batas berat/COD kurir sebelum opsi dikirim ke checkout.
-6. **(Jika scheduledPickup)**: `GET /time?address={pickup_address_id}` → pilih `time_id`.
+6. **(Jika scheduledPickup)**: `GET /time` → pilih `time_id`; filter opsional
+   `?address={pickup_address_id}` berasal dari observasi produksi 2026-07-03.
 7. **Create**: `POST /order` dengan `courier` (nama shipment), `pickup`, `orders[]` → simpan `cnote_no`, `ORDER_ID`, `isPaid`, dan `batch_id`.
 8. **Unpaid**: bila `isPaid=false`, jangan buat ulang order; top-up lalu panggil `POST /order/pay-unpaid`.
 9. **Tracking**: `GET /order?order_id=` / `?tracking_id=` untuk update status; tautkan ke halaman tracking Mengantar.

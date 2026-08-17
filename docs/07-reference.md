@@ -9,7 +9,7 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | **API key** | Token akun Mengantar; ditaruh di path URL `/api/public/{API_KEY}/...`. Rahasia — server-only. |
 | **origin_id** (estimate) | ID **wilayah** asal (kecamatan) — same namespace dgn `destination_id`. Sumber: `GET /address/search` → `_id`, atau `PICKUP_AUTOFILL` dari alamat pickup. ⚠️ **BUKAN** `_id` objek alamat pickup. *(live-verified 2026-07-03)* |
 | **destination_id** (estimate) | ID **wilayah** tujuan (kecamatan/kelurahan). Sumber: `GET /address/search` → `_id`. Dipakai juga sbg `customerAddressDataId`. |
-| **pickup address _id** | `_id` objek alamat pickup dari `GET /address`. Dipakai utk `pickup.address_id` (create order) & `GET /time?address=`. Beda dari origin_id estimate. |
+| **pickup address _id** | `_id` objek alamat pickup dari `GET /address`. Dipakai utk `pickup.address_id` (create order). Filter opsional `GET /time?address=` memakai ID ini (live-verified 2026-07-03; request resmi tidak memakai query). Beda dari origin_id estimate. |
 | **courier (estimasi)** | Key kurir di response `/order/estimate` (mis. `jne`, `sicepatcargo`). Banyak varian. |
 | **courier (shipment)** | Nama kurir untuk `POST /order` — 8 nilai resmi (`JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`). |
 | **cnote_no** | Nomor resi / consignment note. Field utama tracking dari response create/track. |

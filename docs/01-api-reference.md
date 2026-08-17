@@ -1,11 +1,14 @@
 # Mengantar Public API — Referensi Endpoint
 
-**Sumber utama:** dokumentasi resmi Mengantar — `https://app.mengantar.com/docs/` (di-mirror & dirapikan di sini).
-**Sumber pelengkap:** pembedahan plugin WooCommerce *Woo Mengantar* v1.0.32 (untuk pola caching, validasi
-pra-kirim, dan perilaku operasional yang tidak dijelaskan di docs resmi — ditandai **[plugin]**).
-
-> Bagian endpoint, parameter, dan bentuk response di bawah **sudah dicocokkan dengan docs resmi**.
-> Catatan yang masih perlu diuji dengan akun asli ditandai **[verifikasi]**.
+> **Sumber & tingkat kepercayaan**
+>
+> 1. **Utama:** [docs resmi Mengantar](https://app.mengantar.com/docs/), snapshot diambil **2026-08-17**.
+> 2. **Runtime:** observasi produksi read-only bertanggal **2026-07-03** dan **2026-07-19** di
+>    [checklist verifikasi](10-verification-checklist.md).
+> 3. **[plugin]:** Woo Mengantar v1.0.32; panduan kompatibilitas, bukan kontrak resmi.
+>
+> Docs resmi menang untuk kontrak publik; response teramati menang hanya untuk akun/tanggal yang
+> diuji. Konflik dicatat eksplisit. **[verifikasi]** berarti belum aman dijadikan asumsi.
 
 ---
 
@@ -72,7 +75,7 @@ Relatif terhadap `{BASE_URL}/api/public/{API_KEY}` kecuali ditandai **(no-key)**
 | 2 | POST | `/address` | Tambah / update alamat pickup |
 | 3 | GET | `/address` | List alamat pickup milik akun |
 | 4 | POST | `/time` | Tambah jadwal pickup |
-| 5 | GET | `/time?address=` | List jadwal pickup satu alamat |
+| 5 | GET | `/time` (`address` opsional) | List jadwal pickup |
 | 6 | GET | `/order/estimate` | Cek ongkir (single kurir / `all`) |
 | 7 | GET | `/api/order/allEstimatePublic` **(no-key)** | Cek ongkir semua kurir (flat diskon 20%) |
 | 8 | GET | `/api/order/allEstimate3PL` **(no-key)** | Cek ongkir 3PL (harga standar, tanpa promo) |
@@ -194,18 +197,23 @@ curl -X POST '{BASE_URL}/api/public/{API_KEY}/time' \
 Response `POST /time`: `{ success, data: { "_id":"…", "date":"…", "time":"13:00", … } }`.
 `data` adalah satu objek slot, bukan array.
 
-### 4.2 List jadwal — `GET /time?address={address_id}`
+### 4.2 List jadwal — `GET /time`
+
+Docs resmi menampilkan request tanpa query:
 
 ```bash
-curl -G '{BASE_URL}/api/public/{API_KEY}/time' \
-  --data-urlencode 'address=62e27d67ecf5ae2893bc070a'
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/time'
 ```
 
-Response: `{ success, data: [ { "_id": "…", "date": "2023-02-24T12:00:00.000Z", "time": "12:00" } ] }`.
-`_id` slot inilah yang dipakai sebagai `pickup.time_id` di create order.
+Response resmi: `{ success, data: [ { "_id": "…", "date": 1677240000000, "time": "12:00" } ] }`;
+contohnya memakai epoch milliseconds. Response `POST /time` dapat memakai date string.
+`_id` slot dipakai sebagai `pickup.time_id` di create order.
 
-> **[plugin]** Plugin juga memakai `DELETE /time/{time_id}` untuk menghapus slot. Endpoint ini
-> **tidak ada di docs resmi** — verifikasi sebelum diandalkan ([verifikasi]).
+Query opsional `address={pickup_address_id}` memfilter satu alamat pickup dan terverifikasi pada
+akun produksi 2026-07-03, tetapi tidak tercantum di docs resmi. Jangan memakai area `_id`.
+
+> **[plugin] [verifikasi]** Plugin juga memakai `DELETE /time/{time_id}` untuk menghapus slot.
+> Endpoint ini tidak ada di docs resmi dan tidak boleh dipakai oleh smoke test.
 
 ---
 
@@ -382,8 +390,10 @@ curl -G '{BASE_URL}/api/public/{API_KEY}/invoices' \
   --data-urlencode 'invoiceFilter=all'
 ```
 
-Query opsional: `page`, `size`, `dateRange` (JSON berisi `startDate`/`endDate` ISO 8601), dan
-`invoiceFilter` (`typeWithdraw`, `typeAddBalance`, `typePayment`, `typeReconciliation`, `typeRefund`, atau `all`).
+Query opsional: `page` (Number, default `1`), `size` (Number, default semua), `keyword` (cari
+invoice number, `ORDER_ID`, `cnote_no`, atau amount), `dateRange` (JSON string berisi
+`startDate`/`endDate` ISO 8601), dan `invoiceFilter` (`typeWithdraw`, `typeAddBalance`,
+`typePayment`, `typeReconciliation`, `typeRefund`, atau `all`).
 Response: `{ success, data: [ {…invoice…} ], count: 19, balance: 9635676 }`.
 Tiap invoice punya `inv_number`, `type`, `amount`, `total`, `status`, `balance`, `paydAt`, dll.
 `balance` tingkat atas = saldo akun (rupiah).
@@ -442,7 +452,7 @@ Nilai: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja` (
 | Field | Tipe | Keterangan |
 |-------|------|------------|
 | `goodsValue` | Number | Nilai barang **NON-COD** |
-| `COD` | Number | Nilai COD = Nilai Barang + Ongkir + COD Fee (**wajib bila `goodsValue` kosong**) |
+| `COD` | Number | Total yang ditagih ke penerima (**wajib bila `goodsValue` kosong**). Docs resmi tidak menetapkan rumus; **[plugin]** menghitung nilai barang + porsi ongkir + porsi fee COD |
 | `customerAddressDataId` | String | `_id` dari `/address/search` |
 | `customerAddress` | String | Alamat penerima |
 | `customerName` | String | Nama penerima |
@@ -543,20 +553,18 @@ curl -G '{BASE_URL}/api/public/{API_KEY}/order' \
 
 | Field | Tipe | Keterangan |
 |-------|------|------------|
-| `page` / `size` | String | Pagination |
+| `page` / `size` | Number | Pagination; default `1` / `50` |
 | `courier` | String | `JNE`/`SiCepat`/`Sap`/`iDexpress`/`JT`/`Ninja`/`lion`/`anteraja` |
 | `tracking_id` | String | Ambil satu order + riwayat status (by resi) |
 | `order_id` | String | Ambil satu order + riwayat status (by ORDER_ID) |
-| `dateRange.startDate` / `.endDate` | Date | ISO 8601 |
+| `dateRange.startDate` / `.endDate` | Date | ISO 8601; dikirim sebagai JSON string |
 | `batch` | String | Batch `_id` |
 | `cod` | String | `COD` atau `NON_COD` |
-| `status` | String | Status dipisah koma (atau objek `{"DELIVERED":true}`) |
-| `category` | String | `collected_customer`, `yet_to_collect`, `need_attention`, `rts`, `pending_pickup`, `redelivery`, `undelivered`, `delivery_problem`, `over_sla`, `already_been_undelivered`, `been_undelivered_wo_ticket`, `been_undelivered_wo_proof` |
-| `ticketFilter` | String | `withticket`, `without`, `open`, `replied` |
-| `receiverFilter` | String | `1`–`10` |
-| `no_update_after_hour` | String | mis. `48` |
-| `no_update_after_day` | String | `4,6,8,10,12,14,21` |
-| `reseller` | Boolean | Tampilkan order reseller |
+| `status` | String (JSON) | Objek status bernilai `true`, mis. `{"DELIVERED":true}` |
+
+Filter berikut berasal dari Woo Mengantar v1.0.32 dan **tidak ada pada tabel query docs resmi**:
+`category`, `ticketFilter`, `receiverFilter`, `no_update_after_hour`, `no_update_after_day`,
+dan `reseller` **[plugin]**. Verifikasi sebelum dipakai di integrasi baru.
 
 **Status shipment:** untuk penyederhanaan, cukup bedakan `DELIVERED`, `RTS`, dan selain itu `ON GOING`.
 
@@ -584,8 +592,10 @@ curl -G '{BASE_URL}/api/public/{API_KEY}/batch' \
   --data-urlencode 'courier=Sap'
 ```
 
-Params: `page`, `size`, `dateRange`, `courier`. Response `data[]` berisi ringkasan batch
-(`orders`, `error`, `unpaid`, `delivered`, `undelivered`, `rts`, `active`, `totalToPay`, `address`, dll).
+Params resmi: `page`, `size`, `courier`. `dateRange` muncul pada contoh URL resmi, tetapi tidak
+tercantum pada tabel param resminya; dukungan ini perlu dikonfirmasi **[verifikasi]**. Response
+`data[]` berisi ringkasan batch (`orders`, `error`, `unpaid`, `delivered`, `undelivered`, `rts`,
+`active`, `totalToPay`, `address`, dll).
 
 ### 9.5 Hapus batch — `DELETE /batch`
 

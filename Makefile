@@ -1,30 +1,26 @@
-# Mengantar docs+toolkit — entrypoint terminal untuk manusia & CI.
-# Jalankan `make` atau `make help` untuk daftar target.
-.DEFAULT_GOAL := help
 SHELL := bash
+.DEFAULT_GOAL := help
+NPM ?= npm
 
-.PHONY: help check smoke smoke-full client-check client-test spec-lint all
+.PHONY: help check smoke client-check client-test spec-lint all
 
 help: ## Tampilkan daftar target
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-check: ## Validasi spec + link + higiene kredensial (offline, cepat)
+check: spec-lint ## Validasi spec + link internal + higiene kredensial
 	@bash scripts/check-links.sh
 
-spec-lint: ## Validasi OpenAPI spec saja
-	@python3 -c "import yaml; d=yaml.safe_load(open('spec/openapi.yaml')); print('spec OK — paths', len(d['paths']))"
+spec-lint: ## Lint OpenAPI dengan dependency yang terkunci
+	@$(NPM) exec -- redocly lint spec/openapi.yaml
 
-client-check: ## Typecheck client TypeScript (butuh npx/tsc)
-	@npx -y -p typescript tsc -p examples/tsconfig.json && echo "client OK (tsc --strict)"
+client-check: ## Typecheck client TypeScript
+	@$(NPM) exec -- tsc -p examples/tsconfig.json && echo "client OK (tsc --strict)"
 
 client-test: ## Jalankan contract test client TypeScript
-	@npx -y -p tsx tsx --test examples/mengantar-client.test.ts
+	@$(NPM) exec -- tsx --test examples/mengantar-client.test.ts
 
-smoke: ## Smoke-test READ-ONLY ke API (butuh MENGANTAR_API_KEY di env/.env)
+smoke: ## Smoke-test READ-ONLY ke API (key hanya dari environment)
 	@bash scripts/smoke.sh
 
-smoke-full: ## Smoke-test + operasi tulis (buat/hapus slot pickup) — HATI-HATI, pakai sandbox
-	@bash scripts/smoke.sh --full
-
-all: check client-check client-test ## check + client-check + client-test (yang dijalankan CI)
+all: check client-check client-test ## Validasi yang sama dengan CI

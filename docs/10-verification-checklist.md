@@ -1,31 +1,37 @@
 # Checklist Verifikasi (saat API key tersedia)
 
-Hal-hal yang harus dikonfirmasi dengan akun/sandbox. Jalankan cURL di
-[09-curl-examples.md](09-curl-examples.md), tempel response apa adanya, lalu perbarui
-[01-api-reference.md](01-api-reference.md) / [03-data-model.md](03-data-model.md).
+Hal-hal yang harus dikonfirmasi dengan akun/sandbox. Jalankan cURL manual di
+[09-curl-examples.md](09-curl-examples.md), lalu catat hanya field bukti minimum setelah meredaksi
+API key dan data pribadi. Perbarui [01-api-reference.md](01-api-reference.md) / [03-data-model.md](03-data-model.md).
 
 > Cara pakai: centang `[x]` bila sudah diverifikasi, isi blok "Hasil" dengan JSON nyata (redaksi data pribadi).
 
-## 0. Sudah dikonfirmasi via docs resmi ✅
+## 0. Kontrak resmi — snapshot 2026-08-17
 
-Dicocokkan dengan `app.mengantar.com/docs` — **tidak perlu** diverifikasi ulang (kecuali ingin cek nilai nyata):
+Dicocokkan dengan `app.mengantar.com/docs` pada **2026-08-17**. Audit ini tidak menjalankan
+request berkredensial; bukti live tetap hanya bagian 0b/0c.
 
-- ✅ Daftar endpoint (18) + method + parameter — lihat [01](01-api-reference.md) §2.
+- ✅ Daftar 18 operasi, method, body, dan query yang tercantum — lihat [01](01-api-reference.md) §2.
 - ✅ Kode error resmi: `X000`, `X001`, `X002`, `X003` + `409 Conflict` (konkurensi batch).
 - ✅ `POST /time`: `date` = **`mm-dd-yyyy`**, `time` = slot `9:00`–`18:00`.
-- ✅ `courier` param estimate default = `JNE`; nilai `all` → map per kurir.
+- ✅ `courier` estimate default = `JNE`.
+- ⚠️ Docs resmi menyebut `courier=all` mengembalikan “array”, tetapi contoh response dan observasi
+  produksi 2026-07-19 berbentuk **object/map per kurir**. Toolkit mengikuti bentuk teramati.
 - ✅ `COD_AMOUNT` (huruf besar) = Nilai Barang + Ongkir; matriks `unsupported`/`unsupported_cod`.
 - ✅ `customProducts` hanya JNE/SiCepat/Sap/JNT; aturan Σweight & Σqty.
 - ✅ Saldo kurang → order unpaid → `POST /order/pay-unpaid`.
+- ⚠️ Docs resmi menampilkan `GET /time` tanpa query; filter `address` berasal dari observasi live.
+- ⚠️ Contoh URL `GET /batch` memuat `dateRange`, tetapi tabel param resminya tidak.
 
-**Masih perlu akun asli:** rate limit, webhook, stabilitas `destination_id` lintas waktu, perilaku create-order nyata.
+**Masih perlu akun asli:** rate limit, webhook, stabilitas `destination_id` lintas waktu, perilaku
+create-order nyata, dan dua inkonsistensi resmi di atas.
 
 ## 0b. Diverifikasi LIVE ✅ (2026-07-03, akun produksi read-only)
 
 Smoke-test `make smoke` dengan key `API-…` nyata:
 
 - ✅ **Base URL produksi** `https://api-public.mengantar.com` — **bekerja** (bukan lagi asumsi plugin).
-- ✅ Format key: `API-XXXXXXXXXXXXXXXX`. Key valid → estimate dummy `success:true`.
+- ✅ Format key: `API-<redacted>`. Key valid → estimate dummy `success:true`.
 - ✅ **`estimate.origin_id`/`destination_id` = `_id` WILAYAH** (dari `/address/search`), **bukan** `_id` alamat
   pickup. Memakai pickup `_id` → `success:false`. Origin asal = `PICKUP_AUTOFILL` alamat pickup.
 - ✅ `estimate?courier=all` mengembalikan **~14–15 key kurir** (JNE, JNECargo, JT, Ninja, SAP, SAPLite,
@@ -69,7 +75,7 @@ Hasil:
 - [ ] `GET /` (ping) — bentuk response.
 - [ ] `GET /address/search` — semua field item (`id` vs `_id`, `*_NAME`, `zip`, dll) + tipe.
 - [ ] `GET /address` — semua field alamat pickup.
-- [ ] `GET /order/estimate` (single & `all`) — field per kurir lengkap (`price`, `estimatedSpecialPrice`, `estimate_delivery`, `estimatedDate`, `unsupported`, `unsupported_cod`, `discount`, `origin_data`, dll).
+- [ ] `GET /order/estimate` (single & `all`) — field per kurir lengkap; pastikan bentuk `all` tetap map dan catat field ETD per endpoint.
 - [ ] `POST /order` — bentuk lengkap `data[]` (`ORDER_ID`, `cnote_no`, `status`, `statusCategory`, `isPaid`, `error`) + `batch`/`batch_id`/`errors[]`.
 - [ ] `GET /order?order_id=` & `?tracking_id=` — field tracking + struktur `history[]`.
 - [ ] `GET /time` — field slot (`time_id`?, `date`, `time`, label).

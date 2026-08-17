@@ -1,6 +1,7 @@
 # Kredensial — JANGAN pernah commit
 .env
 .env.*
+!.env.example
 *.key
 secrets*.json
 mengantar-key*.txt

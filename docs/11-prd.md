@@ -35,7 +35,7 @@ Produk utama repo ini:
 | NG-1 | Repo ini tidak menyimpan API key, kredensial, response customer nyata, atau data pembayaran. |
 | NG-2 | Repo ini tidak menyediakan aplikasi dashboard, database, job queue, atau deployment produksi. |
 | NG-3 | Repo ini tidak menggantikan konfirmasi final dari docs resmi Mengantar atau tim Mengantar untuk base URL/kontrak akun. |
-| NG-4 | Repo ini tidak menjalankan operasi tulis live secara default; operasi tulis hanya di contoh dan smoke `--full` sandbox. |
+| NG-4 | Repo ini tidak menjalankan operasi tulis live; operasi tulis hanya berupa contoh manual yang wajib diarahkan ke sandbox terkonfirmasi. |
 
 ---
 
@@ -85,7 +85,7 @@ Produk utama repo ini:
 | --- | --- | --- |
 | TD-1 | Keep the TypeScript client dependency-free. | Global `fetch`, `URLSearchParams`, and native types are enough for a docs toolkit. |
 | TD-2 | Keep OpenAPI as the machine-readable contract. | It enables codegen/review while docs remain readable for implementers. |
-| TD-3 | Keep live smoke tests opt-in via environment variables. | Avoid accidental live writes and secret exposure. |
+| TD-3 | Keep the live smoke test read-only and opt-in via process environment. | Prevent accidental writes and avoid parsing credential files. |
 | TD-4 | Keep docs in Bahasa Indonesia with exact API names in English. | The target implementers are Indonesian teams; API casing must stay exact. |
 
 ---
@@ -94,11 +94,9 @@ Produk utama repo ini:
 
 | Check | Command | Covers |
 | --- | --- | --- |
-| Local docs/spec/client check | `make all` | OpenAPI parse, internal links, credential hygiene, strict TS client, dan contract tests. |
+| Local repository contract | `npm ci --ignore-scripts && make all` | Redocly OpenAPI lint, internal links, credential hygiene, strict TS client, dan contract tests dari lockfile. |
 | Shell syntax check | `bash -n scripts/check-links.sh scripts/smoke.sh` | Script parse safety. |
-| OpenAPI quality lint | `npx -y @redocly/cli lint spec/openapi.yaml` | Structural OpenAPI quality beyond local parser. |
-| Live read-only API smoke | `make smoke` | Key validity, address search, pickup address list, estimate, invoices. |
-| Sandbox write smoke | `make smoke-full` | Pickup slot creation/deletion; run only on sandbox. |
+| Live read-only API smoke | `make smoke` | Key validity, address search, pickup address list, estimate, invoices; key hanya dari process environment. |
 
 ---
 <sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

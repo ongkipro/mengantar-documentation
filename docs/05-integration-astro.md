@@ -8,20 +8,22 @@ Asumsi: Astro mode `server` / `hybrid` (output endpoints), atau adapter Cloudfla
 ## 1. Environment
 
 `.env` (jangan commit):
-```
-MENGANTAR_API_KEY=your_production_key
-MENGANTAR_SANDBOX_KEY=your_sandbox_key
-MENGANTAR_SANDBOX=true
+```dotenv
+MENGANTAR_API_KEY=your_environment_key
+MENGANTAR_BASE_URL=https://api-public.mengantar.com
 MENGANTAR_ORIGIN_WILAYAH_ID=your_pickup_PICKUP_AUTOFILL   # _id WILAYAH asal → untuk estimate
-MENGANTAR_PICKUP_ADDRESS_ID=your_pickup_address__id       # _id alamat pickup → untuk pickup.address_id & /time
+MENGANTAR_PICKUP_ADDRESS_ID=your_pickup_address__id       # _id alamat pickup → untuk pickup.address_id
 MENGANTAR_CLIENT_SOURCE=direct              # isi "woocommerce" hanya untuk integrasi WooCommerce
 ```
+
+Untuk sandbox, ganti key dan base URL sebagai satu pasangan deployment. Host sandbox berasal dari
+plugin v1.0.32 dan wajib dikonfirmasi di dashboard/tim Mengantar sebelum dipakai.
 
 > Di Astro, variabel tanpa prefix `PUBLIC_` hanya tersedia di server (`import.meta.env`). Bagus untuk secret.
 
 > ⚠️ **Dua ID berbeda:** estimate `origin_id` = **`_id` wilayah** (dari `PICKUP_AUTOFILL` alamat pickup,
-> atau `/address/search`); `pickup.address_id` di create order & `/time?address=` = **`_id` objek alamat
-> pickup** (dari `/address`). Jangan tertukar (live-verified).
+> atau `/address/search`); `pickup.address_id` = **`_id` objek alamat pickup** (dari `/address`).
+> Filter opsional `/time?address=` juga memakai pickup address `_id` (live-verified 2026-07-03).
 
 ## 2. Client Mengantar (server-only)
 
@@ -32,18 +34,16 @@ Salin [`../examples/mengantar-client.ts`](../examples/mengantar-client.ts) ke
 ```ts
 import { MengantarClient } from './mengantar-client';
 
-const sandbox = import.meta.env.MENGANTAR_SANDBOX === 'true';
-const apiKey = sandbox
-  ? import.meta.env.MENGANTAR_SANDBOX_KEY
-  : import.meta.env.MENGANTAR_API_KEY;
+const apiKey = import.meta.env.MENGANTAR_API_KEY;
+const baseUrl = import.meta.env.MENGANTAR_BASE_URL;
 
-if (!apiKey) throw new Error('MENGANTAR_API_KEY belum dikonfigurasi');
+if (!apiKey || !baseUrl) {
+  throw new Error('MENGANTAR_API_KEY dan MENGANTAR_BASE_URL wajib dikonfigurasi');
+}
 
 export const mengantar = new MengantarClient({
   apiKey,
-  baseUrl: sandbox
-    ? 'https://sandbox.mengantar.com'
-    : 'https://api-public.mengantar.com',
+  baseUrl,
   clientSource: import.meta.env.MENGANTAR_CLIENT_SOURCE === 'woocommerce'
     ? 'woocommerce'
     : undefined,

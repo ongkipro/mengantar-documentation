@@ -1,7 +1,7 @@
 ### Mengantar API — REST client file
 # Kompatibel dengan VS Code REST Client, JetBrains HTTP Client, dan editor sejenis.
 # Isi variabel di bawah (atau pakai file env editor-mu). @key RAHASIA — jangan commit nilai asli.
-# Endpoint TULIS ditandai [WRITE] — jalankan hanya di sandbox.
+# `@base` default hanya untuk READ; sebelum endpoint [WRITE], ganti ke host sandbox terkonfirmasi.
 
 @base = https://api-public.mengantar.com
 @key = GANTI_DENGAN_API_KEY
@@ -35,8 +35,8 @@ Content-Type: application/json
   "PICKUP_NAME": "Gudang Utama"
 }
 
-### 5. List jadwal pickup
-GET {{prefix}}/time?address={{pickupAddressId}}
+### 5. List jadwal pickup (resmi: tanpa query; `?address={{pickupAddressId}}` live-verified sebagai filter opsional)
+GET {{prefix}}/time
 
 ### 6. [WRITE] Tambah jadwal pickup — date = mm-dd-yyyy, time = 9:00..18:00
 POST {{prefix}}/time

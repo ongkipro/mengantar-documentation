@@ -4,6 +4,20 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu 
 
 ## [Unreleased]
 
+### Audited (2026-08-17 — Official Snapshot, SDK, Security, and CI)
+- Rechecked all 18 operations against the official documentation snapshot; documented the
+  `courier=all` response-shape conflict, official query gaps for `GET /time` and `GET /batch`,
+  and the evidence precedence between official docs, dated runtime observations, and plugin behavior.
+- Expanded OpenAPI request/response schemas and query parameters, including invoices, pickup times,
+  tracking records, mutually exclusive delete identifiers, nullable coverage flags, and custom products.
+- Fixed SDK parity for optional pickup-time filtering, invoice/order/batch JSON query serialization,
+  official/plugin filter typing, and `ids` versus `orderIds` deletion payloads; added contract coverage.
+- Replaced network-floating validation with an npm lockfile and one `make all` contract shared by local
+  development and CI. CI now has read-only permissions, SHA-pinned actions, no install scripts,
+  credential persistence disabled, concurrency cancellation, and a bounded timeout.
+- Made the smoke path permanently read-only and stopped sourcing `.env`; write/delete checks must be
+  executed manually in sandbox after explicit review.
+
 ### Audited (2026-08-07 — Official Contract Alignment)
 - Aligned write endpoints, OpenAPI request bodies, cURL examples, REST-client examples, smoke tooling, and the TypeScript client with the official JSON payload contract.
 - Fixed unpaid-order guidance: successful `isPaid:false` responses are no longer treated as exceptions or blindly polled; the documented recovery uses `batch_id` with `/order/pay-unpaid`.

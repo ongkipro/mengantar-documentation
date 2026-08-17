@@ -23,23 +23,25 @@ Dokumen ini menjelaskan cara memelihara, menguji, dan memperluas repo **Menganta
 | `docs/11-prd.md` | Product requirements untuk repo ini. |
 | `docs/12-development.md` | Dokumen ini. |
 | `spec/openapi.yaml` | Kontrak OpenAPI 3.1. |
-| `examples/mengantar-client.ts` | Client TypeScript server-only tanpa dependensi. |
-| `scripts/check-links.sh` | Offline validation: OpenAPI parse, internal links, credential hygiene. |
-| `scripts/smoke.sh` | Read-only/live smoke test; `--full` untuk sandbox write. |
+| `examples/mengantar-client.ts` | Client TypeScript server-only tanpa runtime dependency. |
+| `package.json` / `package-lock.json` | Tooling validasi yang dipin dan direproduksi CI. |
+| `scripts/check-links.sh` | Offline validation: internal links dan credential hygiene. |
+| `scripts/smoke.sh` | Read-only live smoke test; tidak memuat `.env` atau operasi tulis. |
 
 ---
 
 ## 2. Sumber Kebenaran
 
-Urutan prioritas saat ada konflik:
+Gunakan sumber sesuai ruang lingkup, bukan urutan linear yang menyamarkan konflik:
 
-1. Response live/sandbox yang direkam aman di `docs/10-verification-checklist.md`.
-2. Dokumentasi resmi Mengantar (`https://app.mengantar.com/docs/`).
-3. `spec/openapi.yaml` untuk kontrak machine-readable.
-4. `docs/01-api-reference.md` untuk penjelasan manusia.
-5. `examples/mengantar-client.ts` untuk implementasi helper typed.
+1. **Kontrak publik:** dokumentasi resmi Mengantar, dengan tanggal snapshot dicatat.
+2. **Perilaku runtime:** response live/sandbox yang disanitasi di `docs/10-verification-checklist.md`,
+   berlaku untuk akun, environment, dan tanggal pengujian itu.
+3. **Kompatibilitas:** fakta Woo Mengantar v1.0.32 harus ditandai `[plugin]`.
+4. `spec/openapi.yaml`, `docs/01`, dan client adalah turunan yang harus tetap sinkron.
 
-Jika satu fakta berubah, sinkronkan semua tempat yang memuat fakta itu: `01`, `07`, `spec`, `examples`, `requests.http`, dan `README` bila masuk indeks/summary.
+Jika docs resmi dan observasi berbeda, catat keduanya; jangan memilih diam-diam. Jika satu fakta
+berubah, sinkronkan `01`, `07`, spec, client, tests, `requests.http`, dan README bila relevan.
 
 ---
 
@@ -48,11 +50,12 @@ Jika satu fakta berubah, sinkronkan semua tempat yang memuat fakta itu: `01`, `0
 - API key ada di path `/api/public/{API_KEY}` dan harus server-only.
 - `GET /api/order/allEstimatePublic` dan `/api/order/allEstimate3PL` tidak memakai `/api/public/{key}`.
 - `COD_AMOUNT` untuk estimasi memakai huruf besar.
-- `COD` pada `orders[]` berarti total tagih COD = nilai barang + ongkir + fee COD.
+- `COD` pada `orders[]` adalah total yang ditagih ke penerima; rumus nilai barang + porsi ongkir +
+  fee COD berasal dari Woo Mengantar v1.0.32 **[plugin]**, bukan ketentuan rumus di docs resmi.
 - `origin_id` estimasi = wilayah `_id`, biasanya `PICKUP_AUTOFILL` dari pickup address.
 - `pickup.address_id` untuk `POST /order` dan `address_id` untuk `POST /time` = `_id` alamat pickup dari `GET /address`.
 - `POST /time` memakai `date` format `mm-dd-yyyy`, slot jam `9:00`-`18:00`, minimal 90 menit dari sekarang.
-- `POST /time` mengembalikan satu objek slot di `data`; `GET /time` mengembalikan array.
+- `POST /time` mengembalikan satu objek slot di `data`; contoh resmi `GET /time` mengembalikan array dengan date epoch milliseconds.
 - `unsupported:true` menyembunyikan kurir; `unsupported_cod:true` menyembunyikan COD untuk kurir tersebut.
 - `POST /order` menerima batch; jangan panggil paralel untuk JT Premium, Ninja, dan SiCepat.
 - Pertahankan envelope create-order: `data[]`, `batch_id`, dan `errors[]` semuanya bagian kontrak.
@@ -83,35 +86,35 @@ Jika satu fakta berubah, sinkronkan semua tempat yang memuat fakta itu: `01`, `0
 
 ### 4.3 Mengubah TypeScript client
 
-1. Pertahankan dependency-free: gunakan `fetch`, `URLSearchParams`, `Date`, dan type TS biasa.
+1. Pertahankan client tanpa **runtime dependency**: gunakan `fetch`, `URLSearchParams`, `Date`, dan type TS biasa.
 2. Jangan import client ke browser bundle; semua contoh harus server-side.
 3. Semua HTTP non-2xx dan `success:false` tetap melempar `MengantarError`.
-4. Setelah edit, jalankan `make client-check`.
+4. Tambahkan contract test untuk observable behavior baru, lalu jalankan `make client-check client-test`.
 
 ---
 
 ## 5. Perintah Validasi
 
+Install toolchain yang dipin satu kali:
+
 ```bash
-make check          # OpenAPI parse + internal links + credential hygiene
-make client-check   # TypeScript strict client check
-make client-test    # Contract tests untuk date, payload, header, dan response envelope
-make all            # CI-equivalent local validation
+npm ci --ignore-scripts
+```
+
+Lalu jalankan:
+
+```bash
+make all            # Redocly lint + links/hygiene + strict TS + contract tests; sama dengan CI
 bash -n scripts/check-links.sh scripts/smoke.sh
 ```
 
-OpenAPI quality lint opsional namun berguna saat mengubah `spec/openapi.yaml`:
+`make check`, `make spec-lint`, `make client-check`, dan `make client-test` tersedia untuk
+diagnosis terfokus. Jangan memakai `npx -y`: versi validator harus berasal dari lockfile.
+
+Live API smoke test hanya saat key diinjeksikan ke process environment oleh secret manager:
 
 ```bash
-npx -y @redocly/cli lint spec/openapi.yaml
-```
-
-Live API smoke test hanya saat API key tersedia:
-
-```bash
-export MENGANTAR_API_KEY="..."
-make smoke          # read-only
-make smoke-full     # sandbox only; melakukan operasi tulis pickup time
+make smoke          # selalu read-only; script tidak membaca .env
 ```
 
 ---
