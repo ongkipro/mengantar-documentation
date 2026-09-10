@@ -1,23 +1,35 @@
-<div align="center">
+```text
+  ███╗   ███╗███████╗███╗   ██╗ ██████╗  █████╗ ███╗   ██╗████████╗ █████╗ ██████╗ 
+  ████╗ ████║██╔════╝████╗  ██║██╔════╝ ██╔══██╗████╗  ██║╚══██╔══╝██╔══██╗██╔══██╗
+  ██╔████╔██║█████╗  ██╔██╗ ██║██║  ███╗███████║██╔██╗ ██║   ██║   ███████║██████╔╝
+  ██║╚██╔╝██║██╔══╝  ██║╚██╗██║██║   ██║██╔══██║██║╚██╗██║   ██║   ██╔══██║██╔══██╗
+  ██║ ╚═╝ ██║███████╗██║ ╚████║╚██████╔╝██║  ██║██║ ╚████║   ██║   ██║  ██║██║  ██║
+  ╚═╝     ╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
 
-<img src="assets/ongkipro-mengantar-banner.svg" alt="ongki.pro × Mengantar — Official Partner" width="100%">
+                   M U L T I - C O U R I E R   A P I
+                      B Y   O N G K I . P R O
 
-# Mengantar API Integration Documentation
+     "Official Partner Reference & High-Speed Indonesian Logistics Engine"
 
-**Integration documentation and toolkit for Mengantar's Indonesia multi-courier shipping API — curated by [ongki.pro](https://ongki.pro), Official Partner Mengantar.**
+      [▶ SPECS] OpenAPI 3.1  ·  [● ENDPOINTS] 18 Operations  ·  [MIT LICENSE]
+```
 
-Use it with any server-capable stack: **Astro**, **Next.js**, Node, Hono, Laravel, Python, Go, serverless functions, or your own backend.
+<p align="center">
+  <a href="https://ongki.pro"><img src="https://img.shields.io/badge/Mengantar-Official%20Partner-22d3ee?style=for-the-badge&logo=handshake&logoColor=white" alt="Official Partner" /></a>
+  <a href="https://github.com/ongkipro/mengantar-documentation/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI%2FCD-Passing-emerald?style=for-the-badge&logo=githubactions&logoColor=white" alt="CI Passing" /></a>
+  <a href="./spec/openapi.yaml"><img src="https://img.shields.io/badge/OpenAPI-3.1-blue?style=for-the-badge&logo=openapiinitiative&logoColor=white" alt="OpenAPI 3.1" /></a>
+  <a href="#endpoints-18-total"><img src="https://img.shields.io/badge/Endpoints-18%20Total-purple?style=for-the-badge" alt="18 Endpoints" /></a>
+  <a href="https://ongki.pro"><img src="https://img.shields.io/badge/Curated%20by-ongki.pro-111111?style=for-the-badge" alt="ongki.pro" /></a>
+</p>
 
-[![Official Partner](https://img.shields.io/badge/Mengantar-Official%20Partner-22d3ee?labelColor=0b1220)](https://ongki.pro)
-[![by ongki.pro](https://img.shields.io/badge/by-ongki.pro-34d399?labelColor=0b1220)](https://ongki.pro)
-[![CI](https://github.com/ongkipro/mengantar-documentation/actions/workflows/ci.yml/badge.svg)](https://github.com/ongkipro/mengantar-documentation/actions/workflows/ci.yml)
-![endpoints](https://img.shields.io/badge/endpoints-18-success)
-![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-blue)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-![last update](https://img.shields.io/badge/last%20update-2026--08--10-informational)
-![couriers](https://img.shields.io/badge/couriers-JNE%20·%20SiCepat%20·%20J%26T%20·%20Anteraja%20·%20Ninja%20·%20Lion%20·%20IDExpress%20·%20SAP-lightgrey)
-
-</div>
+<p align="center">
+  <a href="#architecture"><b>Architecture</b></a> ·
+  <a href="#core-flow"><b>Core Flow</b></a> ·
+  <a href="#endpoints-18-total"><b>Endpoints</b></a> ·
+  <a href="#repository-layout"><b>Repository Layout</b></a> ·
+  <a href="#documentation-index"><b>Docs Index</b></a> ·
+  <a href="#quick-start-after-you-receive-an-api-key"><b>Quick Start</b></a>
+</p>
 
 ---
 
