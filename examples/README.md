@@ -76,6 +76,7 @@ try {
 - Semua write endpoint memakai JSON sesuai kontrak resmi.
 - Opsi `clientSource: "woocommerce"` menyuntikkan header `x-client-source` otomatis.
 - `success:false` / HTTP non-2xx → `throw MengantarError` dengan `.code` (X000–X003 / 409 / 429, atau field `code` body seperti `COURIER_DISABLED`).
+- `posCodIneligibility(error)` — kenali 403 blokir COD Pos Indonesia (`new_seller`/`insufficient`/`blocked`) beserta `deliveredRate`; `null` untuk error lain ([02](../docs/02-couriers-and-rules.md) §3.3).
 - `isRateAvailable(rate, cod)` — filter ketersediaan rate (termasuk `unsupportedOriginSpx` untuk SPX).
 - Tipe `EstimateCourier` mengecualikan `spx`: estimasi single-courier SPX ditolak `400 Invalid courier` — ambil dari `courier: "all"`.
 - `createOrder()` mempertahankan envelope: order ada di `.data[]`, sedangkan `.batch_id` dan `.errors` tetap tersedia untuk unpaid/partial failure.

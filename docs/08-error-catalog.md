@@ -91,6 +91,8 @@ Plugin memblokir create shipment bila salah satu gagal — replikasikan validasi
 2. success:false + X001/X002/X003     → fatal config error (key/domain/token), stop, alert admin.
 3. success:false + X000               → parameter wajib hilang; perbaiki payload, jangan retry buta.
 3b. 400 Invalid courier / COURIER_DISABLED → nilai courier salah/nonaktif; perbaiki mapping, jangan retry.
+3c. 403 + status new_seller/insufficient/blocked (COD pos) → jangan retry; simpan alasan + deliveredRate,
+    matikan COD pos di kebijakan kurir, tawarkan non-COD/kurir lain ([02](02-couriers-and-rules.md) §3.3).
 4. 409 Conflict (JT/SiCepat)          → antre; jangan kirim batch paralel, gabung ke 1 batch lalu retry (Ninja discontinued).
 5. 429 Too Many Requests (Label Gen)  → kurangi kecepatan polling / request pembuatan label (maks 8 aksi/menit).
 6. success:false + pickup time error  → state "pending_pickup_time", jangan retry buta.

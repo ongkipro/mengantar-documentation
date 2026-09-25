@@ -143,9 +143,39 @@ Ketiga status 403 memakai `message` yang sama — bedakan lewat field `status`.
 > sebelum COD POS diblokir", di bagian kurir "diblokir setelah tiga periode evaluasi terakhir di bawah ambang".
 > Tabel di atas mengikuti versi status yang lebih rinci. **[verifikasi]** mana yang berlaku.
 
-Penanganan di aplikasi: tangkap 403 dengan `status` di atas → sembunyikan COD untuk `pos` (atau tawarkan non-COD/kurir
-lain), tampilkan `deliveredRate` vs `minimumDeliveredRate` ke operator, dan **jangan retry** — status baru berubah setelah
-periode evaluasi berikutnya. POS juga butuh `pinpointData.lat`/`lng` valid pada alamat pickup untuk pickup terjadwal.
+#### Pola penanganan yang disarankan
+
+1. **Kenali persis.** Perlakukan sebagai blokir COD POS hanya bila HTTP **403** *dan* `status` salah satu dari
+   `new_seller`/`insufficient`/`blocked`. 403 lain tetap error biasa — jangan ubah kebijakan kurir karenanya.
+   Client contoh menyediakan `posCodIneligibility(error)` ([examples](../examples/README.md)).
+2. **Jangan retry.** Status baru berubah setelah periode evaluasi berikutnya; retry hanya menghasilkan 403 yang sama.
+3. **Simpan alasan di order.** Order tetap *pending* (belum ada resi), dengan pesan yang menyebut status dan
+   `deliveredRate` vs `minimumDeliveredRate`, agar operator tahu kenapa gagal dan apa langkahnya
+   (ganti kurir atau jadikan non-COD, lalu kirim ulang).
+4. **Berhenti menawarkan COD POS.** Karena estimasi tetap melaporkan `unsupported_cod:false`, filter checkout
+   tidak akan tahu sendiri. Matikan COD untuk `pos` di kebijakan kurir aplikasi Anda saat blokir pertama terdeteksi,
+   supaya pembeli berikutnya tidak membuat order COD POS yang pasti gagal. POS **non-COD tetap ditawarkan**.
+5. **Aktifkan kembali secara manual.** Tidak ada endpoint untuk mengecek status kelayakan sebelum order, jadi
+   operator yang menyalakan lagi COD POS setelah delivered rate pulih; order COD POS berikutnya menjadi pengujiannya.
+
+Contoh (TypeScript, client contoh):
+
+```ts
+import { MengantarError, posCodIneligibility } from "./mengantar-client";
+
+try {
+  await client.createOrder(payload); // courier: "pos", order COD
+} catch (e) {
+  const pos = posCodIneligibility(e);
+  if (pos) {
+    await disableCodForCourier("pos");               // kebijakan kurir aplikasi Anda
+    await markOrderPending(orderId,
+      `COD Pos diblokir (${pos.status}, delivered rate ${pos.deliveredRate}% < ${pos.minimumDeliveredRate}%)`);
+  } else if (e instanceof MengantarError) {
+    // penanganan umum — lihat 08 §E
+  }
+}
+``` POS juga butuh `pinpointData.lat`/`lng` valid pada alamat pickup untuk pickup terjadwal.
 
 ---
 

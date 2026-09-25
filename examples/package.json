@@ -1,6 +1,6 @@
 {
   "name": "@ongkipro/mengantar-client",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Client TypeScript server-only untuk API Mengantar (agregator kurir Indonesia).",
   "type": "module",
   "main": "mengantar-client.ts",

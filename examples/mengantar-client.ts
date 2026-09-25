@@ -467,6 +467,26 @@ export function isRateAvailable(rate: CourierRate, cod = false): boolean {
   if (rate.unsupported === true || rate.unsupportedOriginSpx === true) return false;
   return !(cod && rate.unsupported_cod === true);
 }
+export type PosCodBlockStatus = "new_seller" | "insufficient" | "blocked";
+export interface PosCodIneligibility {
+  status: PosCodBlockStatus;
+  deliveredRate: number | null;
+  minimumDeliveredRate: number | null;
+}
+
+/**
+ * Kenali penolakan COD Pos Indonesia per akun (docs resmi): `POST /order` COD `pos` → 403 dengan
+ * `status` `new_seller`/`insufficient`/`blocked` dan `message` yang sama. Mengembalikan `null` untuk error lain,
+ * termasuk 403 tanpa salah satu status itu. Lihat docs/02 §3.3.
+ */
+export function posCodIneligibility(error: unknown): PosCodIneligibility | null {
+  if (!(error instanceof MengantarError) || error.status !== 403) return null;
+  const body = error.body as Record<string, unknown> | null;
+  const status = body?.status;
+  if (status !== "new_seller" && status !== "insufficient" && status !== "blocked") return null;
+  const rate = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return { status, deliveredRate: rate(body?.deliveredRate), minimumDeliveredRate: rate(body?.minimumDeliveredRate) };
+}
 export interface CourierPerformance {
   couriers: { key: string; score: number }[]; bestCourier: string; recommended: string;
 }

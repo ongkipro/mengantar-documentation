@@ -113,6 +113,7 @@ Hasil (per endpoint):
 - [ ] Status code untuk sukses (selalu 200?) dan untuk error (4xx/5xx?).
 - [ ] Isi nyata `message`, `errors`, `errorsFront` saat gagal (mis. kurir unsupported, COD over limit).
 - [ ] Pesan/format error spesifik "pickup time rejected" (untuk deteksi pending).
+- [ ] Rekam body **403 COD POS** asli (`new_seller`/`insufficient`/`blocked`) dan pastikan field `status`, `deliveredRate`, `minimumDeliveredRate` sesuai docs resmi; cek juga apakah blokir berlaku setelah "masa tenggang 3 hari" atau "tiga periode evaluasi" (docs resmi menyebut keduanya).
 - [ ] Apakah ada **rate limit**/kuota? Header (`X-RateLimit-*`)? Respon saat terlampaui?
 
 ```

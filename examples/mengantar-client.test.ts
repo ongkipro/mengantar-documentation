@@ -5,6 +5,7 @@ import {
   isRateAvailable,
   MengantarClient,
   MengantarError,
+  posCodIneligibility,
   toMengantarDate,
   verifyMengantarWebhookSignature,
 } from "./mengantar-client.ts";
@@ -238,4 +239,24 @@ test("estimate surfaces Invalid courier and COURIER_DISABLED as MengantarError",
     disabled.estimate({ originId: "o", destinationId: "d", courier: "Ninja" }),
     (e: unknown) => e instanceof MengantarError && e.code === "COURIER_DISABLED",
   );
+});
+
+test("posCodIneligibility recognises only the documented Pos COD 403 statuses", async () => {
+  const refusing = (status: number, body: unknown) =>
+    new MengantarClient({ apiKey: "test-key", fetchImpl: async () => new Response(JSON.stringify(body), { status }) });
+  const order = { courier: "pos" as const, pickup: { type: "dropOff" as const, address_id: "a" }, orders: [] };
+  const caught = (client: MengantarClient) => client.createOrder(order).then(() => null, (e: unknown) => e);
+
+  const blocked = await caught(refusing(403, {
+    success: false, message: "Pos Indonesia COD is not available for this account",
+    status: "blocked", deliveredRate: 70, minimumDeliveredRate: 82,
+  }));
+  assert.deepEqual(posCodIneligibility(blocked), { status: "blocked", deliveredRate: 70, minimumDeliveredRate: 82 });
+
+  const newSeller = await caught(refusing(403, { success: false, message: "x", status: "new_seller", deliveredRate: 0 }));
+  assert.deepEqual(posCodIneligibility(newSeller), { status: "new_seller", deliveredRate: 0, minimumDeliveredRate: null });
+
+  assert.equal(posCodIneligibility(await caught(refusing(403, { success: false, message: "Forbidden" }))), null);
+  assert.equal(posCodIneligibility(await caught(refusing(400, { success: false, message: "x", status: "blocked" }))), null);
+  assert.equal(posCodIneligibility(new Error("x")), null);
 });

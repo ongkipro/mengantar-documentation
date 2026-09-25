@@ -2,6 +2,16 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu ke spec (`spec/openapi.yaml`).
 
+## [0.3.3] — 2026-09-25
+
+### Added
+- Pola penanganan blokir COD Pos Indonesia (403) di [02](docs/02-couriers-and-rules.md) §3.3: kenali persis
+  (403 + tiga status), jangan retry, simpan alasan di order, matikan COD `pos` di kebijakan kurir karena estimasi
+  tidak mencerminkannya, aktifkan kembali secara manual. Langkah 3c di [08](docs/08-error-catalog.md) §E dan item
+  rekam-body-asli di [10](docs/10-verification-checklist.md) §3.
+- Client contoh: `posCodIneligibility(error)` → `{ status, deliveredRate, minimumDeliveredRate }` atau `null`,
+  dengan test (403 lain dan status di luar tiga nilai resmi tidak dikenali).
+
 ## [0.3.2] — 2026-09-25
 
 ### Added
