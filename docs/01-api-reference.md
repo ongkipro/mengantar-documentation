@@ -1,108 +1,106 @@
-# Mengantar Public API — Referensi Endpoint
+# Mengantar API — Referensi Lengkap (24 Endpoint + Webhook)
 
-**Sumber utama:** dokumentasi resmi Mengantar — `https://app.mengantar.com/docs/` (di-mirror & dirapikan di sini).
-**Sumber pelengkap:** pembedahan plugin WooCommerce *Woo Mengantar* v1.0.32 (untuk pola caching, validasi
-pra-kirim, dan perilaku operasional yang tidak dijelaskan di docs resmi — ditandai **[plugin]**).
-
-> Bagian endpoint, parameter, dan bentuk response di bawah **sudah dicocokkan dengan docs resmi**.
-> Catatan yang masih perlu diuji dengan akun asli ditandai **[verifikasi]**.
+> Spesifikasi resmi Mengantar Public API, disinkronkan langsung dengan dokumentasi live
+> [Mengantar Public API](https://api-public.mengantar.com/docs/).
+> Mencakup **24 endpoint aktif**, arsitektur **Webhook resmi (HMAC-SHA256)**, modul **Dropshipper**,
+> cetak label PDF asynchronous, dan penanganan **Dangerous Goods (DG)**.
 
 ---
 
 ## 1. Base URL & Autentikasi
 
-Endpoint utama memakai pola **API key di dalam path**:
+Semua request (kecuali endpoint public non-key) diarahkan ke URL berformat:
 
 ```
-{BASE_URL}/api/public/{API_KEY}/{endpoint}
+{BASE_URL}/api/public/{API_KEY}/...
 ```
 
-| Mode | Base URL | Sumber |
-|------|----------|--------|
-| Produksi | `https://api-public.mengantar.com` | **Live-verified 2026-07-19** |
-| Sandbox  | `https://sandbox.mengantar.com` | **[plugin]** |
+- **Base URL Produksi:** `https://api-public.mengantar.com`
+- **Base URL Sandbox:** `https://sandbox.mengantar.com`
+- **API Key:** Diambil dari *Pengaturan Akun (Account Settings) → Integrasi Public API* di dashboard Mengantar.
+  API key disematkan langsung di **path URL**, bukan di header `Authorization`.
+- ⚠️ **Kredensial Server-Only:** Karena API key berada di path URL, **jangan pernah mengekspos endpoint ini ke client-side / browser bundle**. Semua pemanggilan harus melalui backend server-side (Next.js Server Actions/Route Handlers, Astro endpoints, PHP backend, Node.js server, dll).
 
-> **Base URL produksi `https://api-public.mengantar.com` terbukti bekerja live** — dikonfirmasi ulang
-> saat integrasi produksi 2026-07-19 (sebelumnya 2026-07-03), bukan lagi asumsi plugin. Docs resmi tetap
-> memakai placeholder `{BASE_URL}` tanpa host konkret, jadi tetap **konfirmasikan host final** dengan tim
-> Mengantar untuk pemakaian jangka panjang. Host **sandbox** masih berasal dari plugin ([verifikasi]).
+### Catatan Status Kurir (September 2026)
+- **Ninja Discontinued:** Efektif mulai **1 September 2026**, kurir `Ninja` resmi dinonaktifkan di seluruh public API Mengantar (tidak dapat digunakan untuk cek ongkir maupun pembuatan order).
+- **Kurir POS:** Resmi aktif dan didukung untuk pembuatan order (`pos`).
+- **Kurir SPX (Shopee Express):** Muncul sebagai key `spx` di `GET /order/estimate?courier=all` (live, produksi, 2026-09-25), tetapi **belum ada di docs resmi**. Estimasi single-courier untuk SPX ditolak (`400 Invalid courier`); create-order dengan `courier: "spx"` **dikonfirmasi support Mengantar, belum teramati live** **[verifikasi]**. Detail: [02-couriers-and-rules.md](02-couriers-and-rules.md) §1.2.
 
-**Penting:** karena key ada di URL, **JANGAN** panggil API ini dari kode browser/klien.
-Selalu proxy lewat server (Astro endpoint / Next.js route handler) supaya key tidak bocor.
-
-### Endpoint tanpa key tervalidasi
-
-Dua endpoint estimasi berikut tidak memakai `/api/public/{key}`:
-
+### Header Standar
+```http
+Content-Type: application/json
+Accept: application/json
 ```
-{BASE_URL}/api/order/allEstimatePublic     (GET)
-{BASE_URL}/api/order/allEstimate3PL        (GET)
-```
+- Integrator WooCommerce: Wajib menyertakan header `x-client-source: woocommerce` agar analitik pesanan tidak tercatat sebagai `directCall`.
 
-Dan untuk `GET /address/search`, docs resmi menyatakan: **`{API_KEY}` boleh diisi string apa pun**
-karena tidak divalidasi pada route ini (bagian dari legacy system) — tapi struktur path tetap dipertahankan.
-
-### Header
-
-- Write endpoint memakai `Content-Type: application/json`; endpoint GET tidak membutuhkan header khusus.
-- `Accept: application/json` boleh dikirim eksplisit.
-- `x-client-source: woocommerce`: **wajib** jika request berasal dari integrasi WooCommerce.
-  Integrasi non-WooCommerce tidak perlu mengirim header ini (`directCall` adalah default).
-
-### Amplop response
-
-Semua response membungkus hasil dalam amplop dengan `success`:
-
+### Amplop Response Standar
 ```json
-{ "success": true,  "data": { } }
-{ "success": false, "message": "…", "errors": { }, "errorsFront": "…", "courier": "JNE" }
+{
+  "success": true,
+  "data": { ... },
+  "message": "Opsional jika ada pesan"
+}
+```
+Jika gagal (`success: false`):
+```json
+{
+  "success": false,
+  "message": "Deskripsi kesalahan",
+  "errors": { ... },
+  "errorsFront": "Pesan ramah pengguna"
+}
 ```
 
-`errorsFront` = pesan ramah-user (**[plugin]** mengekstrak ini). GET sukses aman di-cache 5 menit **[plugin]**.
+---
+
+## 2. Ringkasan Endpoint Resmi (Lengkap — 24 Endpoint + Webhook)
+
+| # | Method | Path | Kategori | Keterangan |
+|---|--------|------|----------|------------|
+| 1 | GET | `/address/search?keyword=` | Alamat | Cari data wilayah → `origin_id` / `destination_id` |
+| 2 | POST | `/address` | Alamat | Tambah / in-place update alamat pickup (mendukung koordinat `pinpointData`) |
+| 3 | GET | `/address` | Alamat | List alamat pickup milik akun |
+| 4 | DELETE | `/address` | Alamat | Hapus alamat pickup (body `{ "id": "..." }`) |
+| 5 | PUT | `/address/{id}` | Alamat | Update field alamat pickup by ID |
+| 6 | POST | `/time` | Jadwal Pickup | Tambah jadwal pickup (slot jam & tanggal `mm-dd-yyyy`) |
+| 7 | GET | `/time?address=` | Jadwal Pickup | List slot jadwal pickup untuk alamat tertentu |
+| 8 | GET | `/order/estimate` | Ongkir | Cek ongkir akun (single kurir atau `all`, mendukung DG & COD) |
+| 9 | GET | `/api/order/allEstimatePublic` **(no-key)** | Ongkir | Cek ongkir semua kurir (flat diskon 20%, mendukung DG) |
+| 10 | GET | `/api/order/allEstimate3PL` **(no-key)** | Ongkir | Cek ongkir 3PL (harga standar tanpa promo, mendukung DG) |
+| 11 | POST | `/order/getPerformancePublic` | Ongkir | Ambil skor performa kurir di kota tujuan |
+| 12 | GET | `/invoices` | Keuangan | Cek mutasi invoice, saldo dompet Mengantar, & filter keyword/tanggal |
+| 13 | POST | `/dropshippers` | Dropshipper | Daftarkan master dropshipper baru (otomatis dedup by nama + no. HP) |
+| 14 | GET | `/dropshippers` | Dropshipper | Cari master dropshipper tersimpan (prefix nama / no. HP) |
+| 15 | POST | `/order` | Order | Buat order shipment (batch) → return nomor resi (`cnote_no`) & `ORDER_ID` |
+| 16 | GET | `/my-users` | Tim | List assignee (pengguna/staf dalam tim akun) |
+| 17 | POST | `/order/pay-unpaid` | Order | Bayar order berstatus unpaid dalam satu batch |
+| 18 | GET | `/order` | Order | List order (filter & pagination) atau tracking by `order_id` / `tracking_id` |
+| 19 | DELETE | `/order` | Order | Batalkan / hapus order (by `ids` / `orderIds`) |
+| 20 | GET | `/batch` | Order | List batch pengiriman |
+| 21 | DELETE | `/batch` | Order | Hapus batch pengiriman |
+| 22 | GET | `/getReceiverScoreByNumberUser?search=` | Pencegahan RTS | Cek skor riwayat & reputasi penerima sebelum kirim COD |
+| 23 | POST | `/label-generation` | Label PDF (BETA) | Request render label PDF asinkron (kuota 8 print/menit, whitelist) |
+| 24 | GET | `/label-generation/{id}` | Label PDF (BETA) | Cek status & download URL PDF label (aktif 15 menit) |
+| ⚡ | POST | *URL Webhook Integrator* | Webhook | Event notifikasi perubahan status order (HMAC-SHA256 signature) |
 
 ---
 
-## 2. Ringkasan Endpoint (lengkap — 18)
-
-Relatif terhadap `{BASE_URL}/api/public/{API_KEY}` kecuali ditandai **(no-key)** atau **[plugin]**.
-
-| # | Method | Endpoint | Fungsi |
-|---|--------|----------|--------|
-| 1 | GET | `/address/search?keyword=` | Cari data wilayah → `origin_id` / `destination_id` |
-| 2 | POST | `/address` | Tambah / update alamat pickup |
-| 3 | GET | `/address` | List alamat pickup milik akun |
-| 4 | POST | `/time` | Tambah jadwal pickup |
-| 5 | GET | `/time?address=` | List jadwal pickup satu alamat |
-| 6 | GET | `/order/estimate` | Cek ongkir (single kurir / `all`) |
-| 7 | GET | `/api/order/allEstimatePublic` **(no-key)** | Cek ongkir semua kurir (flat diskon 20%) |
-| 8 | GET | `/api/order/allEstimate3PL` **(no-key)** | Cek ongkir 3PL (harga standar, tanpa promo) |
-| 9 | POST | `/order/getPerformancePublic` | Skor performa kurir |
-| 10 | GET | `/invoices` | Invoice + saldo akun |
-| 11 | POST | `/order` | Buat shipment (batch) → `cnote_no` + `ORDER_ID` |
-| 12 | GET | `/my-users` | List assignee (user tim) |
-| 13 | POST | `/order/pay-unpaid` | Bayar order unpaid dalam satu batch |
-| 14 | GET | `/order` | List order (filter/pagination) atau lacak by `order_id`/`tracking_id` |
-| 15 | DELETE | `/order` | Hapus order (by `ids` / `orderIds`) |
-| 16 | GET | `/batch` | List batch |
-| 17 | DELETE | `/batch` | Hapus batch |
-| 18 | GET | `/getReceiverScoreByNumberUser?search=` | Skor penerima per kurir (by no. HP) |
-| — | GET | `/` **[plugin]** | Ping ringan (tak didokumentasikan resmi) |
-
----
-
-## 3. Alamat
+## 3. Modul Alamat Pickup & Wilayah
 
 ### 3.1 Cari data wilayah — `GET /address/search?keyword={q}`
 
-Menghasilkan kode origin & destination. `{API_KEY}` tidak divalidasi di route ini (legacy).
+Menghasilkan referensi ID wilayah untuk origin & destination. `{API_KEY}` tidak divalidasi ketat pada route ini.
 
-**Query:**
+```bash
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/address/search?keyword=papua'
+```
 
+**Query params:**
 | Field | Tipe | Keterangan |
 |-------|------|------------|
-| `keyword` | String | Province / City / District / Subdistrict / Zip |
+| `keyword` | String | Provinsi, Kota, Kecamatan, Kelurahan, atau Kode Pos |
 
-**Response (dipangkas):**
+**Response (potongan):**
 ```json
 {
   "success": true,
@@ -124,252 +122,180 @@ Menghasilkan kode origin & destination. `{API_KEY}` tidak divalidasi di route in
 }
 ```
 
-- `_id` → dipakai sebagai `origin_id`, `destination_id`, dan `customerAddressDataId`.
-- Field `*_SI` / `CODE_SAP` adalah kode internal per kurir (SiCepat / SAP).
+- Simpan `_id`: gunakan sebagai `origin_id`/`destination_id` di estimasi ongkir, serta `customerAddressDataId` saat membuat order.
 
-> *Live-verified 2026-07-19:* tiap record memuat `_id`, `COUNTRY_NAME`, `PROVINCE_NAME`, `CITY_NAME`,
-> `DISTRICT_NAME`, `SUBDISTRICT_NAME`, `ZIP_CODE`, `DESTINATION_CODE` (plus field internal kurir di atas).
-
-### 3.2 Tambah / update alamat pickup — `POST /address`
-
-Ambil dulu data wilayah dari `GET /address/search`, lalu kirim `_id`-nya sebagai `PICKUP_AUTOFILL`.
-Sertakan `_id` (alamat) untuk **update** alamat yang sudah ada.
+### 3.2 Tambah / Update Alamat Pickup — `POST /address`
 
 ```bash
 curl -X POST '{BASE_URL}/api/public/{API_KEY}/address' \
   -H 'Content-Type: application/json' \
   -d '{
-    "PICKUP_AUTOFILL":"5fc63038f8f44b34aa4c1cc4",
-    "PICKUP_ADDRESS":"Jl. Sederhana No. 142",
-    "PICKUP_PIC_PHONE":"085270391495",
-    "PICKUP_PIC":"PIC Name",
-    "PICKUP_NAME":"Seller or Store Name"
+    "PICKUP_AUTOFILL": "5fc63038f8f44b34aa4c1cc4",
+    "PICKUP_ADDRESS": "Jl. Sederhana No. 142",
+    "PICKUP_PIC_PHONE": "085270391495",
+    "PICKUP_PIC": "PIC Name",
+    "PICKUP_NAME": "Gudang Utama",
+    "pinpointData": { "lat": -6.175392, "lng": 106.827153 }
   }'
 ```
 
 **Body params:**
+| Field | Tipe | Wajib | Keterangan |
+|-------|------|:-----:|------------|
+| `PICKUP_AUTOFILL` | String | Ya | `_id` wilayah dari `/address/search` |
+| `PICKUP_ADDRESS` | String | Ya | Teks alamat lengkap pickup |
+| `PICKUP_PIC_PHONE` | String | Ya | Nomor telepon penanggung jawab (PIC) |
+| `PICKUP_PIC` | String | Ya | Nama penanggung jawab (PIC) |
+| `PICKUP_NAME` | String | Ya | Nama toko / gudang asal |
+| `pinpointData` | Object | Opsional | `{ lat: number, lng: number }`. Wajib untuk pengiriman kurir Instant / Same Day |
+| `SHIPPER_ADDR1` | String | Opsional | Alamat retur (jika berbeda dari pickup) |
+| `SHIPPER_AUTOFILL` | String | Opsional | `_id` wilayah retur dari `/address/search` |
+| `SHIPPER_CONTACT` | String | Opsional | Nama kontak retur |
+| `SHIPPER_PHONE` | String | Opsional | Nomor telepon kontak retur |
+| `_id` | String | Opsional | Sertakan ID alamat lama bila ingin melakukan in-place update |
 
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `PICKUP_AUTOFILL` | String | `_id` data wilayah dari `/address/search` |
-| `PICKUP_ADDRESS` | String | Teks alamat |
-| `PICKUP_PIC_PHONE` | String | No. HP PIC |
-| `PICKUP_PIC` | String | Nama PIC |
-| `PICKUP_NAME` | String | Nama seller/toko |
-| `SHIPPER_ADDR1` | String | *(opsional)* jika alamat retur berbeda |
-| `SHIPPER_AUTOFILL` | String | *(opsional)* `_id` data wilayah retur |
-| `SHIPPER_CONTACT` | String | *(opsional)* nama seller/toko retur |
-| `SHIPPER_PHONE` | String | *(opsional)* no. HP retur |
-| `_id` | String | *(opsional)* ID alamat — kirim untuk **update** |
+### 3.3 List Alamat Pickup — `GET /address`
 
-Response mengembalikan objek alamat lengkap (`PICKUP_DESTINATION_CODE`, `PICKUP_ORIGIN_CODE`, dst).
+```bash
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/address'
+```
 
-### 3.3 List alamat pickup — `GET /address`
+Mengembalikan array alamat pickup terdaftar.
+- Ambil `_id` sebagai `address_id` untuk endpoint `/time` dan field `pickup.address_id` di `POST /order`.
+- Ambil `PICKUP_AUTOFILL` sebagai `origin_id` saat cek ongkir.
 
-Response: `{ success, data: [ {…alamat pickup…} ] }`. Ambil `_id` sebagai **`pickup_address_id`** untuk `/time` dan `POST /order`; ambil `PICKUP_AUTOFILL` sebagai **`origin_id` estimasi ongkir**.
+### 3.4 Hapus Alamat Pickup — `DELETE /address`
+
+```bash
+curl -X DELETE '{BASE_URL}/api/public/{API_KEY}/address' \
+  -H 'Content-Type: application/json' \
+  -d '{ "id": "632d6c76361422945dbaafd8" }'
+```
+
+**Body params:**
+| Field | Tipe | Wajib | Keterangan |
+|-------|------|:-----:|------------|
+| `id` | String | Ya | ObjectId alamat pickup yang akan dihapus |
+
+### 3.5 Update Alamat Pickup — `PUT /address/{id}`
+
+```bash
+curl -X PUT '{BASE_URL}/api/public/{API_KEY}/address/632d6c76361422945dbaafd8' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "PICKUP_NAME": "Gudang Cabang Baru",
+    "PICKUP_PIC": "Ahmad",
+    "PICKUP_PIC_PHONE": "081234567890",
+    "PICKUP_ADDRESS": "Jl. Sudirman No. 100"
+  }'
+```
 
 ---
 
 ## 4. Jadwal Pickup
 
-### 4.1 Tambah jadwal — `POST /time`
-
-Dipakai saat `pickup.type = scheduledPickup` di create order.
+### 4.1 Tambah Jadwal Pickup — `POST /time`
 
 ```bash
 curl -X POST '{BASE_URL}/api/public/{API_KEY}/time' \
   -H 'Content-Type: application/json' \
-  -d '{"address_id":"62e27d67ecf5ae2893bc070a","date":"11-27-2022","time":"13:00"}'
+  -d '{"address_id":"62e27d67ecf5ae2893bc070a","date":"11-27-2026","time":"13:00"}'
 ```
 
 | Field | Tipe | Keterangan |
 |-------|------|------------|
-| `address_id` | String | `_id` alamat pickup (origin) |
-| `date` | String | **Format `mm-dd-yyyy`** ⚠️ (bulan-tanggal-tahun, bukan ISO) |
-| `time` | String | Salah satu: `9:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00, 18:00` |
+| `address_id` | String | `_id` alamat pickup |
+| `date` | String | **Format wajib `mm-dd-yyyy`** ⚠️ (contoh `11-27-2026` = 27 Nov 2026) |
+| `time` | String | Salah satu slot: `9:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00, 18:00` |
 
-> ⚠️ **Perhatikan format tanggal `mm-dd-yyyy`** (contoh resmi `11-27-2022` = 27 Nov 2022), **bukan** `YYYY-MM-DD`.
-> Jadwal harus minimal **90 menit dari waktu saat ini**; request yang lebih dekat ditolak sebagai `invalid pickup time`.
+> ⚠️ **Aturan Batas Waktu:** Jadwal pickup harus ditentukan minimal **90 menit dari waktu saat ini**. Request yang lebih cepat akan ditolak oleh sistem Mengantar.
 
-Response `POST /time`: `{ success, data: { "_id":"…", "date":"…", "time":"13:00", … } }`.
-`data` adalah satu objek slot, bukan array.
-
-### 4.2 List jadwal — `GET /time?address={address_id}`
+### 4.2 List Jadwal Pickup — `GET /time?address={address_id}`
 
 ```bash
 curl -G '{BASE_URL}/api/public/{API_KEY}/time' \
   --data-urlencode 'address=62e27d67ecf5ae2893bc070a'
 ```
 
-Response: `{ success, data: [ { "_id": "…", "date": "2023-02-24T12:00:00.000Z", "time": "12:00" } ] }`.
-`_id` slot inilah yang dipakai sebagai `pickup.time_id` di create order.
-
-> **[plugin]** Plugin juga memakai `DELETE /time/{time_id}` untuk menghapus slot. Endpoint ini
-> **tidak ada di docs resmi** — verifikasi sebelum diandalkan ([verifikasi]).
+Ambil `_id` slot dari respon ini untuk dipasang di `pickup.time_id` saat membuat shipment.
 
 ---
 
-## 5. Estimasi Ongkir
+## 5. Estimasi Ongkir & Dangerous Goods
 
-### 5.1 Cek ongkir — `GET /order/estimate`
+### 5.1 Cek Ongkir Akun — `GET /order/estimate`
 
 ```bash
-curl -X GET '{BASE_URL}/api/public/{API_KEY}/order/estimate' \
-  -d 'origin_id=5fc62f5df8f44b34aa4c0d8c' \
-  -d 'destination_id=5fc64714f8f44b34aa4cdd60' \
-  -d 'courier=Sap' -d 'weight=1' -d 'COD_AMOUNT=123'
+curl -G '{BASE_URL}/api/public/{API_KEY}/order/estimate' \
+  --data-urlencode 'origin_id=5fc62f5df8f44b34aa4c0d8c' \
+  --data-urlencode 'destination_id=5fc64714f8f44b34aa4cdd60' \
+  --data-urlencode 'courier=all' \
+  --data-urlencode 'weight=1' \
+  --data-urlencode 'COD_AMOUNT=150000' \
+  --data-urlencode 'isDangerousGoods=false'
 ```
 
 **Query params:**
+| Field | Tipe | Default | Keterangan |
+|-------|------|:-------:|------------|
+| `origin_id` | String | — | `_id` wilayah asal (dari `/address/search` atau `PICKUP_AUTOFILL`) |
+| `destination_id` | String | — | `_id` wilayah tujuan (dari `/address/search`) |
+| `courier` | String | `JNE` | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, atau `all`. **Case-sensitive**, divalidasi terhadap nama shipment (`Sap` ✅, `SAP`/`sap` ❌ → `400 Invalid courier`). SPX **tidak** bisa diminta sendiri — ambil dari `all`. *(Ninja discontinued → `400 COURIER_DISABLED`)* |
+| `weight` | Number | 1 | Berat total dalam satuan kg |
+| `COD_AMOUNT` | Number | — | *(opsional)* Nilai COD = Nilai Barang + Ongkir. Wajib bila ingin kalkulasi COD |
+| `isDangerousGoods`| Boolean | false | Set `true` atau `1` untuk tarif barang berbahaya (JT, SiCepat, iDexpress) |
 
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `origin_id` | String | **`_id` WILAYAH** (kecamatan) dari `/address/search`, **atau** `PICKUP_AUTOFILL` dari alamat pickup |
-| `destination_id` | String | **`_id` WILAYAH** dari `/address/search` |
-| `courier` | String | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`, atau `all`. **Default `JNE`.** `all` → **objek/map di-key nama kurir** (bukan array) |
-| `weight` | Number | Default `1`, satuan **kg** |
-| `COD_AMOUNT` | Number | *(opsional)* COD = Nilai Barang + Ongkir. Dipakai menghitung `codFee` |
+> ⚠️ **Penting:**
+> 1. Respon `courier=all` berbentuk **Map Objek** `Record<string, CourierRate>`, bukan array.
+>    Key map memakai casing campuran yang **berbeda** dari nama shipment. Key yang teramati live (produksi, 2026-09-25):
+>    `JNE`, `JNECargo`, `SiCepat`, `SiCepatCargo`, `SAP`, `SAPLite`, `SapCargo`, `iDexpress`, `JT`, `lion`,
+>    `iDexpressCargo`, `anteraja`, `spx`, `pos` (tanpa Ninja). Pemetaan key → nama shipment: [02](02-couriers-and-rules.md) §1.1.
+> 2. ETD: per 2026-07-19 entri estimasi akun teramati **tanpa** field ETD. Per 2026-09-25 entri `spx` **membawa**
+>    `estimate_delivery` (mis. `"1 - 3 days"`) dan `estimatedDate` (mis. `"2-4 hari"`). Perlakukan ETD sebagai opsional per kurir.
+> 3. Evaluasi flag ketersediaan:
+>    - `unsupported: true` → Kurir tidak melayani rute ini.
+>    - `unsupported_cod: true` → Kurir bisa kirim, tetapi **tidak menerima metode COD**.
+>    - `unsupportedOriginSpx: true` (entri `spx`) → origin tidak dilayani SPX; **perlakukan seperti `unsupported: true`**.
+>    - `unsupportedPickup` (entri `spx`) — arti belum dipastikan **[verifikasi]**; teramati `false`.
+> 4. Pada DG request, `isDangerousGoodsSupported` = kapabilitas kurir, `unsupported` = cakupan tujuan — cek keduanya (docs resmi).
 
-> ⚠️ **`origin_id`/`destination_id` di estimate = `_id` WILAYAH** (kecamatan, dari `/address/search`) —
-> **bukan** `_id` objek alamat pickup dari `GET /address`. Untuk asal, ambil `PICKUP_AUTOFILL` dari alamat
-> pickup-mu (itu memang `_id` wilayah). Sebaliknya, `pickup.address_id` di create order (§7.2) & `/time?address=`
-> memakai **`_id` objek alamat pickup**. *(Live-verified 2026-07-03, re-affirmed 2026-07-19: pakai pickup `_id` di estimate → `success:false`.)*
+Contoh entri `spx` dari respon `courier=all&COD_AMOUNT=100000` (live, Jakarta → Jakarta Selatan, 1 kg; `pickupSchedule` dipotong):
 
-**Response (single kurir):**
 ```json
-{
-  "success": true,
-  "data": {
-    "price": 23000,
-    "coverage_cod": false,
-    "currency": "IDR",
-    "discountPercent": 20,
-    "discount": 4600,
-    "codFee": 4,
-    "estimatedPrice": 23004,
-    "estimatedSpecialPrice": 18404,
-    "unsupported_cod": false,
-    "unsupported": false
-  }
+"spx": {
+  "currency": "IDR", "unsupported": false, "unsupported_cod": false,
+  "estimate_delivery": "1 - 3 days", "price": 13700,
+  "pickupSchedule": { "2026-09-25": [ { "timeRangeId": 1, "start": "14:00", "end": "22:00", "timeEpoch": 1790326800 } ] },
+  "discountPercent": 30, "discount": 4110, "codFee": 3329, "estimatedPrice": 17029, "estimatedSpecialPrice": 12234,
+  "estimatedDate": "2-4 hari", "discountExtraPercent": 5, "discountExtra": 685,
+  "unsupportedOriginSpx": false, "unsupportedPickup": false
 }
 ```
 
-- `estimatedPrice` = harga standar/akhir; `estimatedSpecialPrice` = harga **setelah diskon** (diskon
-  berbasis **volume pengiriman akun** — lihat *Diskon Ongkos Kirim*). *(Live-verified 2026-07-19.)*
-  Berbeda dari `/allEstimatePublic` yang selalu diskon flat 20%.
-
-**Response (`courier=all`):** `data` adalah **objek/map yang di-key nama kurir**, **bukan array**
-*(Live-verified 2026-07-19)*. Tiap value = objek rate yang sama seperti single-kurir
-(`price`, `estimatedPrice`, `estimatedSpecialPrice`, `unsupported`, `unsupported_cod`, dst).
-
-```json
-{
-  "success": true,
-  "data": {
-    "JNE":         { "estimatedPrice": 12000, "estimatedSpecialPrice": 12000, "unsupported": false, "unsupported_cod": false },
-    "SAPLite":     { "estimatedPrice": 8400,  "estimatedSpecialPrice": 8050,  "unsupported": false, "unsupported_cod": false },
-    "iDexpress":   { "estimatedPrice": 10000, "estimatedSpecialPrice": 10000, "unsupported": false, "unsupported_cod": false }
-  }
-}
-```
-
-Key yang muncul mengikuti kurir + varian yang aktif untuk akun, mis. `JNE`, `JNECargo`, `SiCepat`,
-`SiCepatCargo`, `SAP`, `SAPLite`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja` (contoh nyata quote
-Jakarta→Bandung 1 kg: `SAPLite.estimatedSpecialPrice` ≈ 8050, `iDexpress.estimatedPrice` ≈ 10000,
-`JNE.estimatedPrice` 12000). Iterasi dengan `Object.entries(data)`, bukan `data.map(...)`.
-
-> ⚠️ **Tidak ada field ETD / durasi** di response `/order/estimate` (single maupun `all`) — **hanya harga**
-> *(Live-verified 2026-07-19; gotcha umum integrasi)*. Konsumen harus menyediakan label estimasi waktu
-> antar sendiri. Field `estimatedDate`/`estimate_delivery` hanya muncul di `/allEstimatePublic` &
-> `/allEstimate3PL` (§5.2, §5.3), **bukan** di `/order/estimate`.
-
-**Matriks `unsupported` × `unsupported_cod`:**
-
-| `unsupported` | `unsupported_cod` | Arti |
-|:---:|:---:|------|
-| true | (apa pun) | Tidak bisa kirim ke tujuan (COD & non-COD) |
-| false | true | Bisa **non-COD**, tidak bisa COD |
-| false | false | Bisa COD **maupun** non-COD |
-
-### 5.2 Cek ongkir semua kurir (public) — `GET /api/order/allEstimatePublic` (no-key)
-
+### 5.2 Cek Ongkir Public (Diskon Flat 20%) — `GET /api/order/allEstimatePublic` (Tanpa Key)
 ```bash
-curl -X GET '{BASE_URL}/api/order/allEstimatePublic' \
-  -d 'origin_id=…' -d 'destination_id=…' -d 'weight=1' -d 'COD_AMOUNT=123'
+curl -G '{BASE_URL}/api/order/allEstimatePublic' \
+  --data-urlencode 'origin_id=5fc62f5df8f44b34aa4c0d8c' \
+  --data-urlencode 'destination_id=5fc64714f8f44b34aa4cdd60' \
+  --data-urlencode 'weight=1' \
+  --data-urlencode 'isDangerousGoods=false'
 ```
 
-Params: `origin_id`, `destination_id`, `weight`, `COD_AMOUNT`. **Diskon selalu 20% untuk semua user**
-(flat pricing dengan markup & struktur diskon standar Mengantar).
+> ⚠️ Teramati 2026-09-25: pemanggilan `…/order/allEstimatePublic` dengan parameter yang sama seperti §5.1 mengembalikan
+> `404 {"success":false,"message":"Not Found"}` pada akun uji. Belum dipastikan apakah endpoint berubah secara global atau
+> path yang dipanggil berbeda dari path resmi di atas (tanpa prefix key) **[verifikasi]**. Untuk integrasi berbasis akun,
+> gunakan `/order/estimate?courier=all`.
 
-**Response** = map `courierKey → rate` dengan field kaya:
-```json
-{
-  "success": true,
-  "data": {
-    "JT": {
-      "unsupported": false, "unsupported_cod": false,
-      "price": 21000, "estimate_delivery": "-", "estimatedDate": "2-4 hari",
-      "discountPercent": 20, "discount": 4200, "codFee": 4,
-      "estimatedPrice": 21004, "estimatedSpecialPrice": 16804,
-      "cargoPrice": 0, "cargoEstimatedPrice": 0, "cargoDiscountPercent": 0,
-      "discountExtraPercent": 0, "discountExtra": 0
-    }
-  }
-}
-```
-
-Varian cargo/lite muncul sebagai key terpisah (`JNECargo`, `SiCepatCargo`, `SapCargo`, `SAPLite`,
-`iDexpressCargo`, `iDlite`, `SapCargo`, `pos`, `paxel`, dst — lihat [02](02-couriers-and-rules.md)).
-
-### 5.3 Cek ongkir 3PL — `GET /api/order/allEstimate3PL` (no-key)
-
+### 5.3 Cek Ongkir 3PL (Tarif Mentah Tanpa Diskon) — `GET /api/order/allEstimate3PL` (Tanpa Key)
 ```bash
-curl -X GET '{BASE_URL}/api/order/allEstimate3PL' \
-  -d 'origin_id=…' -d 'destination_id=…' -d 'weight=1'
+curl -G '{BASE_URL}/api/order/allEstimate3PL' \
+  --data-urlencode 'origin_id=5fc62f5df8f44b34aa4c0d8c' \
+  --data-urlencode 'destination_id=5fc64714f8f44b34aa4cdd60' \
+  --data-urlencode 'weight=1'
 ```
 
-**3PL (Third Party Logistics):** harga standar Mengantar **tanpa promo/diskon** — ideal untuk
-mitra logistik & integrator yang butuh rate mentah. **Tidak ada flat pricing.**
-
-```json
-{
-  "success": true,
-  "data": {
-    "JNE": { "unsupported": null, "unsupported_cod": null, "price": 14000, "estimatedDate": "1 - 2 days" },
-    "JNECargo": { "price": 45000, "estimatedDate": "3 - 4 days", "minimumWeightCargo": 5 }
-  }
-}
-```
-
-`minimumWeightCargo` hanya muncul untuk kurir yang mendukung cargo (nilai informasi berat minimum cargo).
-
-### 5.4 Skor performa kurir — `POST /order/getPerformancePublic`
-
-Biasanya ditampilkan bersama estimasi ongkir. Kirim `city` + hasil `data` dari `/order/estimate?courier=all`
-(atau `/allEstimatePublic`) sebagai `allEstimateData`.
-
-```bash
-curl -X POST '{BASE_URL}/api/public/{API_KEY}/order/getPerformancePublic' \
-  -H 'Content-Type: application/json' -H 'Accept: application/json' \
-  -d '{"city":"JEMBER","allEstimateData":{ …hasil allEstimate… }}'
-```
-
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `city` | String | `CITY_NAME` dari `/address/search` |
-| `allEstimateData` | Object | `data` dari `/order/estimate?courier=all` atau `/allEstimatePublic` |
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "couriers": [ {"key":"JNE","score":95}, {"key":"SiCepat","score":100} ],
-    "bestCourier": "SiCepat",
-    "recommended": "JNE"
-  }
-}
-```
+### 5.4 Skor Performa Kurir — `POST /order/getPerformancePublic`
+Mengembalikan rekomendasi kurir terbaik (`bestCourier` dan `recommended`) serta skor performa di kota tujuan.
 
 ---
 
@@ -378,318 +304,242 @@ curl -X POST '{BASE_URL}/api/public/{API_KEY}/order/getPerformancePublic' \
 ```bash
 curl -G '{BASE_URL}/api/public/{API_KEY}/invoices' \
   --data-urlencode 'page=1' \
-  --data-urlencode 'size=50' \
+  --data-urlencode 'size=20' \
+  --data-urlencode 'keyword=ORD-12345' \
   --data-urlencode 'invoiceFilter=all'
 ```
 
-Query opsional: `page`, `size`, `dateRange` (JSON berisi `startDate`/`endDate` ISO 8601), dan
-`invoiceFilter` (`typeWithdraw`, `typeAddBalance`, `typePayment`, `typeReconciliation`, `typeRefund`, atau `all`).
-Response: `{ success, data: [ {…invoice…} ], count: 19, balance: 9635676 }`.
-Tiap invoice punya `inv_number`, `type`, `amount`, `total`, `status`, `balance`, `paydAt`, dll.
-`balance` tingkat atas = saldo akun (rupiah).
+| Param | Tipe | Keterangan |
+|-------|------|------------|
+| `keyword` | String | Cari berdasarkan nomor invoice, `ORDER_ID`, atau resi (`cnote_no`) |
+| `page` / `size` | Number | Pagination riwayat |
+| `dateRange` | String | JSON ISO date: `{"startDate":"...","endDate":"..."}` |
+| `invoiceFilter` | String | Filter transaksi: `typeWithdraw`, `typeAddSaldo`, `typePayment`, `all` |
+
+Response mengembalikan array mutasi `data[]` beserta `balance` (saldo rupiah saat ini).
 
 ---
 
-## 7. Buat Shipment — `POST /order`
+## 7. Modul Master Dropshipper
 
-Docs resmi memakai JSON.
+Fitur master dropshipper memungkinkan pengiriman paket atas nama entitas pihak ketiga / reseller.
+
+### 7.1 Tambah Dropshipper — `POST /dropshippers`
+
+```bash
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/dropshippers' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Toko Sejahtera Partner",
+    "phone": "081234567890"
+  }'
+```
+
+- Response: HTTP 201 `{ "success": true, "data": { "id": "66ab1234...", "name": "...", "phone": "..." } }`.
+- **Idempoten:** Jika nama dan nomor HP persis sama sudah ada di akun Anda, API mengembalikan record lama tanpa membuat data ganda.
+
+### 7.2 Cari Master Dropshipper — `GET /dropshippers`
+
+```bash
+curl -G '{BASE_URL}/api/public/{API_KEY}/dropshippers' \
+  --data-urlencode 'search=Toko' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'perPage=20'
+```
+
+- `search`: Prefix pencarian nama atau nomor HP (case-insensitive). Encode `+` sebagai `%2B`.
+- `perPage`: Maksimal 100 record per request.
+
+---
+
+## 8. Pembuatan Order (Shipment Creation) — `POST /order`
+
+Endpoint utama untuk request resi dan jadwal penjemputan paket.
 
 ```bash
 curl -X POST '{BASE_URL}/api/public/{API_KEY}/order' \
   -H 'Content-Type: application/json' \
   -d '{
-    "courier":"Sap",
-    "pickup":{
-      "type":"scheduledPickup",
-      "volume":"volumeMotor",
-      "address_id":"62e27d67ecf5ae2893bc070a",
-      "time_id":"62e27d81ecf5ae2893bc070b"
+    "courier": "JNE",
+    "pickup": {
+      "type": "scheduledPickup",
+      "volume": "volumeMotor",
+      "address_id": "62e27d67ecf5ae2893bc070a",
+      "time_id": "62e27d81ecf5ae2893bc070b"
     },
-    "orders":[{
-      "assignee":"5fc62dd8f8f44b34aa4bc9aa",
-      "COD":12444,
-      "customerAddressDataId":"5fc62dd8f8f44b34aa4bc9aa",
-      "customerAddress":"address",
-      "customerName":"name",
-      "customerPhone":"123456",
-      "parcelContent":"Kaos",
-      "weight":1,
-      "quantity":1,
-      "customProducts":[{"name":"Baju Biru","variant":"XL / Biru","qty":2,"price":120000}]
-    }]
+    "orders": [
+      {
+        "goodsValue": 150000,
+        "customerAddressDataId": "5fc62dd8f8f44b34aa4bc9aa",
+        "customerAddress": "Jl. Tebet Barat Raya No. 45, RT 01 / RW 02",
+        "customerName": "Budi Santoso",
+        "customerPhone": "081234567890",
+        "parcelContent": "Kaos Katun Premium",
+        "weight": 1,
+        "quantity": 2,
+        "isDangerousGoods": false,
+        "cargo": false,
+        "dropShipper": {
+          "id": "66ab1234567890abcdef1234",
+          "name": "Toko Sejahtera Partner",
+          "phone": "081234567890"
+        },
+        "customProducts": [
+          { "name": "Kaos Hitam", "variant": "L", "qty": 1, "price": 75000, "weight": 0.5 },
+          { "name": "Kaos Putih", "variant": "XL", "qty": 1, "price": 75000, "weight": 0.5 }
+        ]
+      }
+    ]
   }'
 ```
 
-> Jika **saldo tidak cukup**, order tetap sukses dibuat sebagai **unpaid**
-> (`isPaid=false`, `cnote_no=null`); jangan membuat ulang order. Top-up saldo lalu bayar melalui
-> `POST /order/pay-unpaid` memakai `batch_id` dari response.
+### 8.1 Aturan Payload & Parameter Kunci
+1. **`courier`**:
+   - Nilai valid (docs resmi): `"JNE"`, `"SiCepat"`, `"Sap"`, `"iDexpress"`, `"JT"`, `"lion"`, `"anteraja"`, `"pos"`.
+   - `"spx"` (SPX / Shopee Express): **dikonfirmasi support Mengantar, belum ada di docs resmi, belum teramati di create-order live** **[verifikasi]**. Uji satu order dulu.
+   - ⚠️ `Ninja` telah discontinued per 1 Sept 2026.
+2. **`orders[].isDangerousGoods`**:
+   - Boolean (`true`/`false`). Didukung kurir: `JT`, `SiCepat` (otomatis masuk layanan `HALU`), dan `iDexpress` (layanan `Regular`).
+3. **`orders[].cargo`**:
+   - Boolean (`true`/`false`). Kurir yang mendukung opsi kargo: `JNE`, `SiCepat`, `Sap`, `iDexpress`.
+4. **`orders[].dropShipper`**:
+   - Objek `{ id, name, phone }`. Wajib terdaftar di master dropshippers akun terlebih dahulu. Validasi dilakukan menyeluruh terhadap 1 batch; jika 1 invalid, seluruh batch ditolak.
+5. **`orders[].COD` vs `orders[].goodsValue`**:
+   - Non-COD: Kirim `goodsValue` (nominal rupiah barang).
+   - COD: Kirim `COD` (Nilai Barang + Ongkir + Biaya COD).
+6. **Invariant Ketat `customProducts`**:
+   - Jika `customProducts` disertakan:
+     - `orders.weight` **harus persis sama** dengan $\sum (\text{qty} \times \text{weight})$.
+     - `orders.quantity` **harus persis sama** dengan $\sum (\text{qty})$.
+   - Kurir yang mendukung rincian produk: `JNE`, `SiCepat`, `Sap`, `JNT`.
 
-### 7.1 Field `courier`
+### 8.2 Konkurensi Batch (JT Premium & SiCepat)
+Untuk kurir dengan generate resi terpusat di server (**JT Premium & SiCepat**):
+- **Jangan pernah mengirim `POST /order` secara paralel** dari akun yang sama.
+- Kirim order dalam 1 batch array. Bila terdeteksi ada proses yang sedang berjalan, API akan membalas dengan **HTTP `409 Conflict`**.
 
-Nilai: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja` (perhatikan kapitalisasi).
-
-### 7.2 Field `pickup`
-
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `type` | String | `scheduledPickup` (dijemput) atau `dropOff` (antar sendiri) |
-| `address_id` | String | `_id` alamat pickup (origin) |
-| `time_id` | String | Wajib bila `type=scheduledPickup` (dari `/time`) |
-| `volume` | String | `volumeTruck`, `volumeMobil`, `volumeMotor` (wajib bila `scheduledPickup`) |
-
-### 7.3 Item `orders[]`
-
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `goodsValue` | Number | Nilai barang **NON-COD** |
-| `COD` | Number | Nilai COD = Nilai Barang + Ongkir + COD Fee (**wajib bila `goodsValue` kosong**) |
-| `customerAddressDataId` | String | `_id` dari `/address/search` |
-| `customerAddress` | String | Alamat penerima |
-| `customerName` | String | Nama penerima |
-| `customerPhone` | String | No. HP penerima |
-| `parcelContent` | String | Isi paket / nama produk |
-| `weight` | Number | Berat total (kg). Bila `customProducts` valid, **harus = Σ(qty × weight)** |
-| `quantity` | Number | Kuantitas. Bila `customProducts` valid, **harus = Σ(qty)** |
-| `destinationMark` | String | *(opsional)* |
-| `deliveryInstruction` | String | *(opsional)* |
-| `dontIncludeSubdistrict` | Boolean | *(opsional)* |
-| `cargo` | Boolean | *(opsional)* `true` → mode Cargo (JNE, SiCepat, Sap, iDexpress) |
-| `customProducts` | Array | *(opsional)* rincian produk manual — lihat 7.4 |
-
-### 7.4 `customProducts[]` (opsional)
-
-Disimpan seperti "Tambah Manual" di aplikasi. **Saat ini hanya didukung untuk `JNE`, `SiCepat`, `Sap`, `JNT`.**
-
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `name` | String | Nama produk (wajib bila `customProducts` diisi) |
-| `variant` | String/Object | *(opsional)* teks varian di tabel produk label |
-| `qty` | Number | Kuantitas (alias diterima: `quantity`, `orderQuantity`) |
-| `price` | Number | *(opsional)* harga (alias: `harga`, `regularPrice`) |
-| `weight` | Number | *(opsional)* berat kg per produk (default 1) |
-
-### 7.5 Response sukses
-
-`data` adalah **array** (satu entri per order). Field kunci per entri:
-
-| Field | Arti |
-|-------|------|
-| `ORDER_ID` | ID order Mengantar |
-| `cnote_no` | **Nomor resi / tracking number** |
-| `status` / `statusCategory` | Status shipment |
-| `isPaid` | `true`/`false` |
-| `batch` / `batch_id` | Batch pengelompokan (juga di tingkat atas) |
-
-Tingkat atas: `success`, `batch`, `batch_id`, `errors: []`.
-
-### 7.6 ⚠️ Konkurensi batch — JT Premium, Ninja, SiCepat
-
-Untuk kurir yang resinya (`cnote_no`) di-generate di sisi Mengantar — **JT Premium, Ninja, SiCepat** —
-nomor diberi berurutan per akun. **Hanya satu batch boleh diproses dalam satu waktu per akun.**
-
-- **Jangan** kirim beberapa request batch bersamaan (paralel).
-- Gabungkan semua order ke **satu batch / satu request**.
-- Jika terdeteksi request konkuren (JT Premium), API membalas **HTTP `409 Conflict`**:
-
-```json
-{ "success": false, "message": "Sedang ada proses pembuatan order JT Premium yang berjalan. Mohon gabungkan semua order dalam 1 batch yang sama…" }
-```
+### 8.3 Order Unpaid (Saldo Kurang)
+Jika saldo akun tidak mencukupi untuk order Non-COD, API **tidak melempar error**, melainkan membuat order dengan status `isPaid: false` dan `cnote_no: null`.
+- Solusi: Top-up saldo, lalu jalankan `POST /order/pay-unpaid` memakai `batch_id` yang diterima. Resi akan langsung diterbitkan tanpa harus input ulang data pelanggan.
 
 ---
 
-## 8. Assignee — `GET /my-users`
+## 9. Tracking & Manajemen Order
 
-List user tim yang bisa dipasang sebagai `orders.assignee`.
-
-```bash
-curl -X GET '{BASE_URL}/api/public/{API_KEY}/my-users'
-```
-
-Response: `{ success, data: [ { "_id":"…", "name":"abbi", "email":"…" } ] }`. Pakai `_id` sebagai `assignee`.
-
----
-
-## 9. Order & Batch
-
-### 9.1 Bayar unpaid — `POST /order/pay-unpaid`
-
-```bash
-curl -X POST '{BASE_URL}/api/public/{API_KEY}/order/pay-unpaid' \
-  -H 'Content-Type: application/json' \
-  -d '{"courier":"Sap","batch_id":"6332f5b98c3ea4bc8e15f72d"}'
-```
-
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `batch_id` | String | Batch `_id` |
-| `courier` | String | Kurir batch |
-
-Response: `{ success: true, count: 1 }` (jumlah order yang berhasil dibayar).
-
-### 9.2 List order — `GET /order`
-
-Lacak satu order (via `tracking_id` / `order_id`) **atau** list dengan filter & pagination.
-
-```bash
-curl -G '{BASE_URL}/api/public/{API_KEY}/order' \
-  --data-urlencode 'page=1' \
-  --data-urlencode 'size=50' \
-  --data-urlencode 'dateRange={"startDate":"2021-09-23T00:00:00.000Z","endDate":"2022-09-23T23:59:59.999Z"}' \
-  --data-urlencode 'courier=Sap' \
-  --data-urlencode 'cod=NON_COD' \
-  --data-urlencode 'category=collected_customer' \
-  --data-urlencode 'status={"DELIVERED":true}'
-```
-
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `page` / `size` | String | Pagination |
-| `courier` | String | `JNE`/`SiCepat`/`Sap`/`iDexpress`/`JT`/`Ninja`/`lion`/`anteraja` |
-| `tracking_id` | String | Ambil satu order + riwayat status (by resi) |
-| `order_id` | String | Ambil satu order + riwayat status (by ORDER_ID) |
-| `dateRange.startDate` / `.endDate` | Date | ISO 8601 |
-| `batch` | String | Batch `_id` |
-| `cod` | String | `COD` atau `NON_COD` |
-| `status` | String | Status dipisah koma (atau objek `{"DELIVERED":true}`) |
-| `category` | String | `collected_customer`, `yet_to_collect`, `need_attention`, `rts`, `pending_pickup`, `redelivery`, `undelivered`, `delivery_problem`, `over_sla`, `already_been_undelivered`, `been_undelivered_wo_ticket`, `been_undelivered_wo_proof` |
-| `ticketFilter` | String | `withticket`, `without`, `open`, `replied` |
-| `receiverFilter` | String | `1`–`10` |
-| `no_update_after_hour` | String | mis. `48` |
-| `no_update_after_day` | String | `4,6,8,10,12,14,21` |
-| `reseller` | Boolean | Tampilkan order reseller |
-
-**Status shipment:** untuk penyederhanaan, cukup bedakan `DELIVERED`, `RTS`, dan selain itu `ON GOING`.
-
-### 9.3 Hapus order — `DELETE /order`
-
-```bash
-curl -X DELETE '{BASE_URL}/api/public/{API_KEY}/order' \
-  -H 'Content-Type: application/json' \
-  -d '{"courier":"Sap","ids":["6332f9dfdeff6b0cae5e6c11","6332f9dfdeff6b0cae5e6c12"]}'
-```
-
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `ids` | Array | Array `_id` order |
-| `orderIds` | Array | *(opsional)* array `ORDER_ID` — **jangan** kirim bersama `ids` (akan menimpa) |
-
-> Untuk **anteraja**, order baru bisa dihapus **5 menit** setelah dibuat.
-
-### 9.4 List batch — `GET /batch`
-
-```bash
-curl -G '{BASE_URL}/api/public/{API_KEY}/batch' \
-  --data-urlencode 'page=1' \
-  --data-urlencode 'size=50' \
-  --data-urlencode 'courier=Sap'
-```
-
-Params: `page`, `size`, `dateRange`, `courier`. Response `data[]` berisi ringkasan batch
-(`orders`, `error`, `unpaid`, `delivered`, `undelivered`, `rts`, `active`, `totalToPay`, `address`, dll).
-
-### 9.5 Hapus batch — `DELETE /batch`
-
-```bash
-curl -X DELETE '{BASE_URL}/api/public/{API_KEY}/batch' \
-  -H 'Content-Type: application/json' \
-  -d '{"courier":"Sap","id":"6332f9dfdeff6b0cae5e6c11"}'
-```
-
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `id` | String | Batch `_id` |
-| `courier` | String | Kurir batch |
+- **Bayar Unpaid:** `POST /order/pay-unpaid` (body: `{ "batch_id": "...", "courier": "JNE" }`).
+- **Lacak Order:** `GET /order?tracking_id={cnote_no}` atau `GET /order?order_id={ORDER_ID}`.
+  - Format timestamp riwayat: `history[].date` terstandarisasi dalam format `DD-MM-YYYY HH:mm` (WIB).
+- **Hapus / Batal Order:** `DELETE /order` (body: `{ "courier": "...", "ids": ["..."] }`). Khusus kurir Anteraja, pembatalan hanya dapat dilakukan setelah 5 menit sejak order dibuat.
+- **Hapus Batch:** `DELETE /batch` (body: `{ "courier": "...", "id": "..." }`).
+- **Skor Penerima:** `GET /getReceiverScoreByNumberUser?search={phone}`. Memeriksa rasio sukses deliveri vs RTS nomor HP pelanggan sebelum Anda memproses order COD berisiko tinggi.
 
 ---
 
-## 10. Skor Penerima — `GET /getReceiverScoreByNumberUser?search={phone}`
+## 10. Cetak Label PDF Asynchronous (BETA)
 
-Skor riwayat penerima per kurir (deteksi risiko RTS sebelum kirim COD).
+Endpoint pencetakan label modern yang memproses kompilasi PDF di latar belakang via worker queue.
 
+> 🔒 **Akses Terbatas (Whitelist):** Fitur ini hanya dapat dipanggil oleh API Key akun yang telah di-whitelist oleh tim Mengantar (mendapat izin `labelGeneration`). Akun tanpa izin akan menerima HTTP 403.
+> ⏱️ **Rate Limit:** Maksimal **8 action print per 60 detik** per akun induk.
+
+### 10.1 Request Pembuatan Label — `POST /label-generation`
 ```bash
-curl -X GET '{BASE_URL}/api/public/{API_KEY}/getReceiverScoreByNumberUser?search=8123456789'
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/label-generation' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "orderId": "ORDER-JNE-001",
+    "courier": "JNE",
+    "format": "thermal-10x15"
+  }'
 ```
+- Hanya menerima **satu `orderId` per request** (tidak menerima multi-order).
+- Return HTTP 202 Accepted: `{ "success": true, "data": { "labelGenerationId": "66d84347...", "status": "PENDING" } }`.
 
-| Field | Tipe | Keterangan |
-|-------|------|------------|
-| `search` | String | No. HP penerima |
+**Daftar Format Label:**
+| Format | Kurir yang Didukung |
+|--------|---------------------|
+| `normal-1`, `normal-2`, `normal-4`, `normal-6` | Semua kurir |
+| `thermal-10x10`, `thermal-10x15`, `thermal-8x6` | Semua kurir |
+| `thermal-new-10x10`, `thermal-new-10x15` | **Khusus order J&T (JT)** |
 
-**Response** — per kurir: `total`, `value`, `inProgress`, `delivered`, `rts`, `undelivered`, `rate` (0–10):
-```json
+### 10.2 Polling Status Label — `GET /label-generation/{labelGenerationId}`
+```bash
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/label-generation/66d84347d792a71058fd6c10'
+```
+- Endpoint ini read-only dan **tidak memakan kuota 8 print/menit**.
+- Lakukan polling berkala (mis. tiap 2-3 detik):
+  - `PENDING` / `PROCESSING`: Tunggu dan polling kembali.
+  - `COMPLETED`: Terdapat `downloadUrl` (signed GCS URL yang aktif selama 15 menit). Unduh file PDF segera.
+  - `FAILED`: Gagal merender, baca keterangan di field `errorMessage`.
+
+---
+
+## 11. Arsitektur Webhook Resmi Mengantar (Production)
+
+Mengantar kini menyediakan webhook berbasis push untuk memperbarui status pesanan secara real-time tanpa perlu polling `GET /order`.
+
+### 11.1 Pendaftaran URL Webhook
+Konfigurasikan Webhook URL Anda di:
+**Dashboard Mengantar → Settings (Pengaturan) → Account (Akun) → Integrasi Public API**.
+- Membutuhkan verifikasi OTP saat pertama kali menyimpan.
+- Otomatis men-generate **`Webhook Secret`** rahasia Anda.
+- URL wajib HTTPS dan dapat diakses publik.
+
+### 11.2 Payload yang Dikirimkan Mengantar
+Mengantar mengirim `POST` dengan body JSON setiap kali status order berubah:
+```http
+POST https://domain-anda.com/api/webhook/mengantar
+Content-Type: application/json
+x-timestamp: 1787548800000
+x-signature: 05826dec707ea7164801d952cb7eaf7ce9adc0c8aa0b93366480434164a1a111
+
 {
-  "success": true,
-  "data": {
-    "phone": "8123456789",
-    "JNE": { "total": 36, "delivered": 35, "rts": 1, "undelivered": 0, "rate": 9.7 },
-    "Ninja": { "total": 4, "delivered": 4, "rts": 0, "rate": 10 }
-  }
+  "cnote_no": "JNE1234567890",
+  "order_id": "ORD-000123",
+  "courier": "JNE",
+  "status_category": "DELIVERED"
 }
 ```
 
----
+### 11.3 Status Category Resmi
+- **Kurir:** `PENDING PICKUP`, `PICKED UP`, `ON DELIVERY`, `DELIVERED`, `UNDELIVERED`, `PICKUP FAILED`, `RTS`.
+- **Internal Mengantar:** `ACTIVE/WAITING NEXT PROCESS`, `ERROR`.
+- ⚠️ **Penanganan Pembatalan:** Tangani kedua ejaan pembatalan: `CANCELED` dan `CANCELLED`.
 
-## 11. Kode Error
-
-API resmi memakai kode error berikut (lihat [08-error-catalog.md](08-error-catalog.md) untuk penanganan):
-
-| Kode | Arti |
-|------|------|
-| `X000` | Ada parameter wajib yang tidak dikirim |
-| `X001` | `secret_key` tidak dikenal / tidak valid / kadaluarsa |
-| `X002` | `secret_key` tidak valid untuk domain ini (key Developer/Universal bebas domain) |
-| `X003` | User `token` tidak dikenal / tidak valid / kadaluarsa |
-
-Plus **`409 Conflict`** untuk konkurensi batch JT Premium/Ninja/SiCepat (§7.6).
-
----
-
-## 12. Pemetaan method client (referensi port) — [plugin]
-
-Untuk memudahkan port dari plugin WooCommerce ke stack lain:
-
-| Method PHP | HTTP | Endpoint |
-|------------|------|----------|
-| `search_address($keyword)` | GET | `/address/search?keyword=` |
-| `get_user_addresses()` | GET | `/address` |
-| `create_user_address()` / `update_user_address()` | POST | `/address` (dengan `_id` untuk update) |
-| `check_shipping_fee(_,'normal')` | GET | `/order/estimate` |
-| `check_shipping_fee(_,'public')` | GET | `/api/order/allEstimatePublic` |
-| `check_shipping_fee(_,'3pl')` | GET | `/api/order/allEstimate3PL` |
-| `create_order()` | POST | `/order` |
-| `get_order_by_tracking_id()` / `get_order_by_order_id()` | GET | `/order?tracking_id=` / `?order_id=` |
-| `get_user_invoices()` | GET | `/invoices` |
-| `get_pickup_times()` | GET | `/time?address=` |
-| `add_pickup_time()` | POST | `/time` |
-| `ping()` | GET | `/` (plugin-only) |
-
----
-
-## 13. Cek koneksi & validasi API key — [plugin]
-
-Tidak ada endpoint validasi key khusus. Plugin memvalidasi key dengan estimate dummy:
-
+### 11.4 Rumus Verifikasi Signature (HMAC-SHA256)
+Signature adalah hash HMAC-SHA256 (format hex) dari:
 ```
-GET /api/public/{API_KEY}/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destination_id=5fc62de8f8f44b34aa4bdc58&courier=all&weight=1
+string_to_sign = x-timestamp + "." + raw_request_body
 ```
+Menggunakan `Webhook Secret` Anda sebagai HMAC key.
 
-| Kondisi | Arti |
-|---------|------|
-| Request gagal / tidak ada response | ❌ Server Offline |
-| Response datang & `success` ≠ false | ✅ Online & License Valid |
-| Response `success:false` (mis. `X001`) | ⚠️ Online, License Invalid |
+#### Official Test Vector
+- `Webhook Secret`: `testsecret`
+- `x-timestamp`: `1787548800000`
+- `raw_body`: `{"cnote_no":"JNE1234567890","order_id":"ORD-000123","courier":"JNE","status_category":"DELIVERED"}`
+- String to sign: `1787548800000.{"cnote_no":"JNE1234567890","order_id":"ORD-000123","courier":"JNE","status_category":"DELIVERED"}`
+- `Expected x-signature`: `05826dec707ea7164801d952cb7eaf7ce9adc0c8aa0b93366480434164a1a111`
 
-ID dummy di atas milik environment Mengantar — sebaiknya ganti dengan origin/destination milikmu.
+### 11.5 Aturan SLA & Retry
+1. **Timeout 5 Detik:** Server Anda harus merespons status `200 OK` sesegera mungkin (< 5 detik) sebelum melakukan proses database yang berat.
+2. **Retry Otomatis:** Jika gagal (non-2xx/timeout), Mengantar me-retry hingga 3 kali (jeda ~1s, ~5s, dan ~15s).
+3. **Auto-Pause:** Jika endpoint Anda gagal 20 kali berturut-turut dalam 24 jam, webhook akan di-*pause* otomatis. Anda dapat mengaktifkannya kembali dengan menekan tombol **"Aktifkan kembali"** di dashboard seller.
+4. Gunakan `x-timestamp` untuk mencegah race condition dari event yang datang tidak berurutan karena retry.
 
 ---
 
-## 14. Caching (perilaku plugin) — [plugin]
+## 12. Kode Error Resmi
 
-- Semua **GET** sukses di-cache 5 menit (transient `wm_api_cache_{md5(url)}`).
-- Origin optimizer menambah cache rate per-origin 10 menit + cache `search_address`.
-- POST/DELETE tidak di-cache; setelah create/update address, cache `/address` di-clear.
-- Karena URL mengandung API key, **redaksi key** di log (regex `/api/public/**redacted**`).
-
-Replikasi caching opsional tapi disarankan (hemat kuota & latensi).
+| Kode | Arti | Tindakan |
+|------|------|----------|
+| `X000` | Parameter wajib tidak lengkap | Cek payload request, jangan kirim request ulang tanpa perbaikan |
+| `X001` | `secret_key` tidak valid / expired | Perbarui API Key di pengaturan akun |
+| `X002` | `secret_key` tidak valid untuk domain ini | Gunakan key tipe Universal / Developer atau daftarkan domain |
+| `X003` | User token tidak valid / kadaluarsa | Refresh token user |
+| `409 Conflict` | Konkurensi batch JT Premium / SiCepat | Antrekan request, gabungkan order ke 1 batch array |
+| `400` `COURIER_DISABLED` | Kurir dinonaktifkan (mis. `courier=Ninja`) | Hapus kurir dari opsi |
+| `400` `Invalid courier` | Nilai `courier` di estimasi tidak dikenali (case-sensitive; termasuk semua ejaan SPX) — teramati live 2026-09-25 | Pakai nama shipment persis; SPX ambil dari `courier=all` |
+| `429 Too Many Requests` | Limit cetak label terlampaui | Batasi maksimal 8 aksi print per 60 detik |
 
 ---
 <sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

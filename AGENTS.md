@@ -14,8 +14,8 @@ pickup, tracking). **Ini bukan aplikasi** — tidak ada build/test/runtime. Isi:
 ├── README.md              # ringkasan + peta dokumen (untuk manusia)
 ├── AGENTS.md / CLAUDE.md  # file ini — kontrak agent
 ├── Makefile               # entrypoint: make check | client-check | smoke | all
-├── docs/                  # 01–10, dokumentasi kanonik (baca sesuai kebutuhan)
-├── spec/openapi.yaml      # OpenAPI 3.1, 18 endpoint — sumber untuk codegen client
+├── docs/                  # 01–14, dokumentasi kanonik (baca sesuai kebutuhan)
+├── spec/openapi.yaml      # OpenAPI 3.1, 24 endpoint — sumber untuk codegen client
 ├── examples/              # client TypeScript no-dep (package.json + tsconfig) + cara pakai
 ├── scripts/               # check-links.sh (validasi) · smoke.sh (uji API read-only)
 ├── requests.http          # REST-client file (VS Code / JetBrains)
@@ -41,21 +41,24 @@ menjadi fakta pasti tanpa bukti dari akun asli.
 1. **API key server-only.** Key ada di **path** (`/api/public/{API_KEY}/…`), bukan header. **JANGAN**
    panggil API dari browser/klien — selalu proxy lewat server. **Redaksi key** di semua log.
 2. **Casing param persis.** `COD_AMOUNT` (huruf besar), bukan `cod_amount`. Nama kurir shipment
-   persis: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`.
+   persis: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos` (+ `spx` — dikonfirmasi support
+   Mengantar, belum teramati di create-order live). Key respon `estimate?courier=all` berbeda casing (`SAP`, `SAPLite`,
+   `spx`, …) — petakan lewat `docs/02` §1.1. Estimasi single-courier SPX → `400 Invalid courier`; ambil dari `all`, dan
+   perlakukan `unsupportedOriginSpx:true` seperti `unsupported:true`. *(Ninja discontinued per 1 Sept 2026)*.
 3. **`POST /time` → `date` format `mm-dd-yyyy`** (bulan-tanggal-tahun), bukan ISO. `time` = slot
    tetap `9:00`–`18:00`.
-4. **Konkurensi batch.** JT Premium / Ninja / SiCepat: **satu batch per akun**, jangan `POST /order`
+4. **Konkurensi batch.** JT Premium / SiCepat: **satu batch per akun**, jangan `POST /order`
    paralel → `409 Conflict`. Gabung semua order ke satu request.
 5. **`data` create order = ARRAY.** Nomor resi = **`cnote_no`** (bukan `tracking_id`).
 6. **Saldo kurang → order `unpaid`** (`cnote_no` kosong). Bayar via `POST /order/pay-unpaid`.
-7. **Idempotensi & retry.** Simpan `ORDER_ID`; polling tracking pakai backoff. Jangan retry buta pada
+7. **Idempotensi & retry.** Simpan `ORDER_ID`; polling tracking pakai backoff atau pasang Webhook resmi. Jangan retry buta pada
    `success:false` dengan kode `X001`/`X002`/`X003` (masalah kredensial, bukan transient).
 8. **Normalisasi wilayah.** Nama provinsi/kota dari API tidak standar — lihat `docs/03-data-model.md` §6.
 
 ## Kode error (docs resmi)
 
 `X000` param wajib hilang · `X001` key invalid/expired · `X002` key salah domain · `X003` token invalid ·
-`409` konkurensi batch. Penanganan lengkap: `docs/08-error-catalog.md`.
+`409` konkurensi batch · `429` rate limit cetak label. Penanganan lengkap: `docs/08-error-catalog.md`.
 
 ## Peta dokumen — baca yang relevan saja
 
@@ -66,6 +69,8 @@ menjadi fakta pasti tanpa bukti dari akun asli.
 | Skema DB / kamus data / normalisasi wilayah | `docs/03-data-model.md` |
 | Arsitektur & alur end-to-end | `docs/04-how-it-works.md` |
 | Contoh Astro / Next.js | `docs/05-…` / `docs/06-…` + `examples/` |
+| Contoh PHP / Laravel | `docs/13-integration-php.md` |
+| Contoh Node.js / Express / Fastify | `docs/14-integration-node-js.md` |
 | Glosarium & enum lengkap | `docs/07-reference.md` |
 | Error & pola penanganan | `docs/08-error-catalog.md` |
 | cURL smoke-test | `docs/09-curl-examples.md` |
@@ -98,8 +103,8 @@ Jangan tandai tugas selesai bila `make check`/`make client-check` masih merah.
 ## Yang BUKAN ada di sini
 
 - Tidak ada API key / kredensial (minta ke tim Mengantar).
-- Tidak ada webhook resmi (status via **polling** `/order?order_id=`) — lihat `docs/10` bila ingin cek.
-- Base URL produksi/sandbox berasal dari plugin — **konfirmasi** sebelum dipakai produksi.
+- Webhook resmi sekarang **didukung penuh** (HMAC-SHA256 over `x-timestamp.raw_body`) — lihat `docs/01-api-reference.md` §11 & panduan integrasi (polling `/order?order_id=` tetap dapat dipakai sebagai fallback).
+- Base URL produksi `https://api-public.mengantar.com` sudah live-verified; untuk sandbox pastikan akun Anda memiliki akses.
 
 ---
 <sub>oleh <a href="https://ongki.pro">ongki.pro</a> — Official Partner Mengantar</sub>

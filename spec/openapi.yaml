@@ -1,21 +1,23 @@
 openapi: 3.1.0
 info:
   title: Mengantar Public API
-  version: 0.2.0
+  version: 0.3.1
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
   description: >-
-    Spec Mengantar Public API. Endpoint, parameter, dan bentuk response dicocokkan dengan
-    dokumentasi resmi (https://app.mengantar.com/docs/). Beberapa detail perilaku (caching,
-    validasi pra-kirim, base URL) berasal dari pembedahan plugin WooCommerce "Woo Mengantar"
-    v1.0.32 dan ditandai di deskripsi. Autentikasi: API key di PATH (`/api/public/{apiKey}`),
-    bukan header. Konfirmasi base URL final + skema tepercaya via 10-verification-checklist.md.
+    Spesifikasi resmi Mengantar Public API (sinkron per September 2026 dengan https://api-public.mengantar.com/docs/).
+    Mencakup 24 endpoint aktif: Alamat, Jadwal Pickup, Cek Ongkir (termasuk Dangerous Goods), Invoice/Saldo,
+    Dropshipper, Pembuatan & Pelacakan Order, Cetak Label PDF Asynchronous (BETA), serta Callback Webhook resmi (HMAC-SHA256).
+    Per 1 September 2026: Kurir Ninja resmi discontinued. Kurir Pos resmi didukung.
+    SPX (Shopee Express) muncul sebagai key `spx` di /order/estimate?courier=all (live, 2026-09-25) tetapi belum ada di docs resmi;
+    `courier: spx` untuk POST /order dikonfirmasi support Mengantar, belum teramati live.
+    Autentikasi: API key di PATH (`/api/public/{apiKey}`), bukan header.
 servers:
   - url: https://api-public.mengantar.com
-    description: Produksi (dari plugin — konfirmasi)
+    description: "Production (https://api-public.mengantar.com)"
   - url: https://sandbox.mengantar.com
-    description: Sandbox (dari plugin — konfirmasi)
+    description: "Sandbox (https://sandbox.mengantar.com — catatan: Webhook dan beberapa rute kurir sandbox dibatasi)"
 security: []
 
 paths:
@@ -70,6 +72,60 @@ paths:
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200': { $ref: '#/components/responses/Envelope' }
+    delete:
+      operationId: deleteAddress
+      summary: Hapus alamat pickup
+      description: Menghapus 1 alamat pickup milik akun terautentikasi.
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string, description: Address ObjectId to delete }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Alamat berhasil dihapus
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PickupAddress' }
+
+  /api/public/{apiKey}/address/{id}:
+    put:
+      operationId: updateAddress
+      summary: Update data alamat pickup by ID
+      description: Mengubah field alamat pickup tertentu. Field yang tidak dikirim tidak akan diubah.
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: Address ObjectId to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PickupAddressUpdateInput' }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error' }
+        '200':
+          description: Alamat berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PickupAddress' }
 
   /api/public/{apiKey}/time:
     get:
@@ -127,14 +183,24 @@ paths:
         - { name: destination_id, in: query, required: true, schema: { type: string } }
         - name: courier
           in: query
-          schema: { type: string, default: JNE, enum: [JNE, SiCepat, Sap, iDexpress, JT, Ninja, lion, anteraja, all] }
+          schema: { type: string, default: JNE, enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, all] }
+          description: >-
+            Kurir yang dipilih, case-sensitive (Sap diterima, SAP/sap → 400 Invalid courier).
+            SPX tidak bisa diminta sendiri (semua ejaan → 400 Invalid courier, teramati 2026-09-25) — ambil dari `all`.
+            Ninja discontinued per 1 Sept 2026 (→ 400 COURIER_DISABLED).
         - { name: weight, in: query, schema: { type: number, default: 1 }, description: kg }
         - { name: COD_AMOUNT, in: query, schema: { type: integer }, description: 'IDR; = Nilai Barang + Ongkir' }
+        - name: isDangerousGoods
+          in: query
+          schema: { type: boolean, default: false }
+          description: Set true / 1 untuk tarif Dangerous Goods (JT, SiCepat, iDexpress)
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
           description: >-
             data = objek CourierRate bila courier tunggal, ATAU map {courierKey: CourierRate} bila all.
+            Key map berbeda casing dari nama shipment; teramati 2026-09-25: JNE, JNECargo, SiCepat, SiCepatCargo,
+            SAP, SAPLite, SapCargo, iDexpress, JT, lion, iDexpressCargo, anteraja, spx, pos.
           content:
             application/json:
               schema:
@@ -154,8 +220,9 @@ paths:
       parameters:
         - { name: origin_id, in: query, required: true, schema: { type: string } }
         - { name: destination_id, in: query, required: true, schema: { type: string } }
-        - { name: weight, in: query, schema: { type: number } }
+        - { name: weight, in: query, schema: { type: number, default: 1 } }
         - { name: COD_AMOUNT, in: query, schema: { type: integer } }
+        - { name: isDangerousGoods, in: query, schema: { type: boolean, default: false }, description: Tarif Dangerous Goods }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -175,7 +242,8 @@ paths:
       parameters:
         - { name: origin_id, in: query, required: true, schema: { type: string } }
         - { name: destination_id, in: query, required: true, schema: { type: string } }
-        - { name: weight, in: query, schema: { type: number } }
+        - { name: weight, in: query, schema: { type: number, default: 1 } }
+        - { name: isDangerousGoods, in: query, schema: { type: boolean, default: false }, description: Tarif Dangerous Goods }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -230,6 +298,7 @@ paths:
         - $ref: '#/components/parameters/ApiKey'
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
         - { name: size, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: keyword, in: query, schema: { type: string }, description: 'Pencarian nomor invoice, ORDER_ID, atau nomor resi (cnote_no)' }
         - { name: dateRange, in: query, schema: { type: string }, description: 'JSON {"startDate":"…","endDate":"…"}' }
         - { name: invoiceFilter, in: query, schema: { type: string }, description: 'Jenis invoice; gunakan all atau kosong untuk semua' }
       responses:
@@ -246,11 +315,98 @@ paths:
                       count: { type: integer }
                       balance: { type: integer, description: 'saldo akun (IDR)' }
 
+  /api/public/{apiKey}/dropshippers:
+    post:
+      operationId: addDropshipper
+      summary: Tambah master dropshipper (dedup by name + phone)
+      description: Menyimpan data dropshipper ke master akun. Jika nama dan no. HP persis sama sudah ada, record lama dikembalikan (idempoten).
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DropshipperInput' }
+      responses:
+        '201':
+          description: Dropshipper berhasil dibuat atau ditemukan
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Dropshipper' }
+        '400': { description: 'name atau phone kosong/invalid' }
+        '401': { description: 'API Key invalid atau tidak punya izin createOrder' }
+        '403': { description: 'Fitur Dropshipper belum diaktifkan di akun' }
+        '500': { description: 'Internal server error' }
+    get:
+      operationId: searchDropshippers
+      summary: Cari master dropshipper (prefix search)
+      description: Mencari dropshipper tersimpan berdasarkan prefix nama atau no. HP (case-insensitive).
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - { name: search, in: query, schema: { type: string }, description: 'Prefix nama atau no. HP (URL-encode tanda plus sebagai %2B)' }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: perPage, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        '200':
+          description: Hasil pencarian dropshipper
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DropshipperListResponse' }
+        '400': { description: 'perPage > 100' }
+        '401': { description: 'Unauthorized' }
+        '403': { description: 'Fitur Dropshipper tidak aktif' }
+
+  /api/public/{apiKey}/label-generation:
+    post:
+      operationId: requestLabelGeneration
+      summary: Request pembuatan PDF label (Async, Whitelist, rate limit 8 print/menit)
+      description: Mendaftarkan pekerjaan render label PDF di latar belakang untuk 1 order. Memerlukan whitelist akun.
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LabelGenerationRequest' }
+      responses:
+        '202':
+          description: Job pembuatan label berhasil didaftarkan (PENDING)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LabelGenerationPendingResponse' }
+        '400': { description: 'Format tidak kompatibel, atau lebih dari 1 orderId dikirim' }
+        '403': { description: 'Akun tidak di-whitelist atau order bukan milik akun' }
+        '404': { description: 'Order tidak ditemukan' }
+        '429': { description: 'Print limit exceeded: maksimal 8 print action per menit' }
+
+  /api/public/{apiKey}/label-generation/{labelGenerationId}:
+    get:
+      operationId: getLabelGenerationStatus
+      summary: Cek status dan download URL label PDF
+      description: Read-only; tidak mengonsumsi kuota print 8/menit. URL download aktif selama 15 menit saat COMPLETED.
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - name: labelGenerationId
+          in: path
+          required: true
+          schema: { type: string }
+          description: ID 24 karakter yang dikembalikan saat request pembuatan label
+      responses:
+        '200':
+          description: Status job rendering label
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LabelGenerationStatusResponse' }
+        '403': { description: 'Not allowed' }
+        '404': { description: 'Data not found' }
+
   /api/public/{apiKey}/order:
     post:
       operationId: createOrder
       summary: Buat shipment (batch)
-      description: Saldo kurang → order tetap sukses dibuat dengan isPaid=false dan cnote_no=null. JT Premium/Ninja/SiCepat → 1 batch per akun (lihat 409).
+      description: Saldo kurang → order tetap sukses dibuat dengan isPaid=false dan cnote_no=null. JT Premium/SiCepat → 1 batch per akun (lihat 409). Ninja discontinued per 1 Sept 2026.
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
         required: true
@@ -263,8 +419,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CreateOrderResponse' }
+        '400':
+          description: Validasi dropshipper gagal atau parameter order salah
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
         '409':
-          description: Konkurensi batch JT Premium/Ninja/SiCepat — gabungkan ke 1 batch
+          description: Konkurensi batch JT Premium / SiCepat — gabungkan ke 1 batch
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Envelope' }
@@ -411,6 +572,34 @@ paths:
                         description: 'phone + objek per kurir { total, value, inProgress, delivered, rts, undelivered, rate }'
                         additionalProperties: true
 
+webhooks:
+  orderStatusUpdate:
+    post:
+      operationId: orderStatusUpdate
+      summary: Order Status Update Webhook (Mengantar → Integrator URL)
+      description: >-
+        Event perubahan status pesanan yang dikirim Mengantar ke Webhook URL Anda.
+        Tervalidasi dengan HMAC-SHA256 hex dari `{x-timestamp}.{raw body}` menggunakan Webhook Secret.
+      parameters:
+        - name: x-timestamp
+          in: header
+          required: true
+          schema: { type: string, example: '1787548800000' }
+          description: Timestamp waktu pengiriman dalam milidetik
+        - name: x-signature
+          in: header
+          required: true
+          schema: { type: string }
+          description: HMAC-SHA256 signature dalam heksadesimal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookPayload' }
+      responses:
+        '200':
+          description: Event diterima dan diakui integrator (harus respons dalam < 5 detik)
+
 components:
   parameters:
     ApiKey:
@@ -441,6 +630,7 @@ components:
         message: { type: string }
         errors: {}
         errorsFront: {}
+        code: { type: string, description: 'kode error mesin, mis. COURIER_DISABLED (docs resmi)' }
         courier: { type: string }
       required: [success]
 
@@ -469,8 +659,17 @@ components:
         PICKUP_AUTOFILL: { type: string }
         PICKUP_FULL_AUTOFILL: { type: string }
         PICKUP_ADDRESS: { type: string }
+        PICKUP_CITY: { type: string }
+        PICKUP_REGION: { type: string }
+        PICKUP_DISTRICT: { type: string }
+        PICKUP_SUBDISTRICT: { type: string }
         PICKUP_DESTINATION_CODE: { type: string }
         PICKUP_ORIGIN_CODE: { type: string }
+        pinpointData:
+          type: object
+          properties:
+            lat: { type: number }
+            lng: { type: number }
 
     PickupAddressInput:
       type: object
@@ -481,11 +680,29 @@ components:
         PICKUP_PIC_PHONE: { type: string }
         PICKUP_PIC: { type: string }
         PICKUP_NAME: { type: string }
+        pinpointData:
+          type: object
+          description: Lokasi titik koordinat pickup (wajib untuk Instant/Same Day)
+          properties:
+            lat: { type: number }
+            lng: { type: number }
         SHIPPER_ADDR1: { type: string, description: (opsional) alamat retur berbeda }
         SHIPPER_AUTOFILL: { type: string }
         SHIPPER_CONTACT: { type: string }
         SHIPPER_PHONE: { type: string }
         _id: { type: string, description: hanya untuk update }
+
+    PickupAddressUpdateInput:
+      type: object
+      properties:
+        PICKUP_NAME: { type: string }
+        PICKUP_PIC: { type: string }
+        PICKUP_PIC_PHONE: { type: string }
+        PICKUP_ADDRESS: { type: string }
+        PICKUP_CITY: { type: string }
+        PICKUP_REGION: { type: string }
+        PICKUP_DISTRICT: { type: string }
+        PICKUP_SUBDISTRICT: { type: string }
 
     PickupTime:
       type: object
@@ -513,10 +730,106 @@ components:
         estimatedDate: { type: string, example: '2-4 hari' }
         unsupported: { type: [boolean, 'null'] }
         unsupported_cod: { type: [boolean, 'null'] }
+        isDangerousGoodsSupported: { type: boolean, description: 'kapabilitas DG kurir; hanya bila isDangerousGoods dikirim' }
+        discountExtraPercent: { type: number }
+        discountExtra: { type: number }
+        unsupportedOriginSpx:
+          type: boolean
+          description: 'Hanya entri spx (teramati 2026-09-25). true = origin tidak dilayani SPX; perlakukan seperti unsupported=true.'
+        unsupportedPickup:
+          type: boolean
+          description: 'Hanya entri spx (teramati 2026-09-25). Arti belum dipastikan.'
+        pickupSchedule:
+          type: object
+          description: 'Hanya entri spx (teramati 2026-09-25). Map tanggal (yyyy-mm-dd) → daftar slot pickup.'
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              properties:
+                timeRangeId: { type: integer }
+                start: { type: string, example: '14:00' }
+                end: { type: string, example: '22:00' }
+                timeEpoch: { type: integer, description: 'epoch (skala detik); hubungan dengan start/end belum dipastikan' }
         cargoPrice: { type: number }
         cargoEstimatedPrice: { type: number }
         cargoDiscountPercent: { type: number }
         minimumWeightCargo: { type: number, description: 'hanya kurir cargo (mode 3PL)' }
+
+    DropshipperInput:
+      type: object
+      required: [name, phone]
+      properties:
+        name: { type: string, minLength: 1, description: Nama toko / pengirim dropshipper }
+        phone: { type: string, minLength: 9, description: No. telepon dropshipper }
+
+    Dropshipper:
+      type: object
+      required: [id, name, phone]
+      properties:
+        id: { type: string, description: ObjectId dropshipper }
+        name: { type: string }
+        phone: { type: string }
+
+    DropshipperListResponse:
+      type: object
+      required: [success, data, pagination]
+      properties:
+        success: { type: boolean }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Dropshipper' }
+        pagination:
+          type: object
+          properties:
+            page: { type: integer }
+            perPage: { type: integer }
+
+    LabelGenerationRequest:
+      type: object
+      required: [orderId, courier, format]
+      properties:
+        orderId: { type: string, description: Satu ID order yang valid dan telah terbayar }
+        courier: { type: string, example: JNE }
+        format:
+          type: string
+          enum:
+            - normal-1
+            - normal-2
+            - normal-4
+            - normal-6
+            - thermal-10x10
+            - thermal-10x15
+            - thermal-8x6
+            - thermal-new-10x10
+            - thermal-new-10x15
+
+    LabelGenerationPendingResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          required: [labelGenerationId, status]
+          properties:
+            labelGenerationId: { type: string }
+            status: { type: string, enum: [PENDING] }
+
+    LabelGenerationStatusResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          required: [labelGenerationId, status]
+          properties:
+            labelGenerationId: { type: string }
+            status: { type: string, enum: [PENDING, PROCESSING, COMPLETED, FAILED] }
+            format: { type: string }
+            downloadUrl: { type: string, description: GCS signed URL (aktif 15 menit) }
+            errorMessage: { type: string }
 
     CreateOrderRequest:
       type: object
@@ -524,7 +837,10 @@ components:
       properties:
         courier:
           type: string
-          enum: [JNE, SiCepat, Sap, iDexpress, JT, Ninja, lion, anteraja]
+          enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, spx]
+          description: >-
+            Kurir untuk shipment. `spx` = SPX Express (Shopee Express): dikonfirmasi support Mengantar,
+            belum ada di docs resmi dan belum teramati di create-order live. Ninja discontinued per 1 September 2026.
         pickup: { $ref: '#/components/schemas/Pickup' }
         orders:
           type: array
@@ -572,8 +888,8 @@ components:
         customerName: { type: string, minLength: 1 }
         customerPhone: { type: string, pattern: '^\d{10,15}$' }
         parcelContent: { type: string, minLength: 1 }
-        weight: { type: number, minimum: 1, description: 'kg; bila customProducts valid harus = Σ(qty×weight)' }
-        quantity: { type: integer, minimum: 1, description: 'bila customProducts valid harus = Σ(qty)' }
+        weight: { type: number, minimum: 1, description: 'kg; bila customProducts diisi harus = Σ(qty×weight)' }
+        quantity: { type: integer, minimum: 1, description: 'bila customProducts diisi harus = Σ(qty)' }
         goodsValue: { type: number, minimum: 0, description: 'NON-COD (eksklusif vs COD)' }
         COD: { type: number, minimum: 0, description: 'COD = Nilai Barang + Ongkir + COD Fee (eksklusif vs goodsValue)' }
         assignee: { type: string, description: _id dari /my-users }
@@ -581,9 +897,18 @@ components:
         deliveryInstruction: { type: string }
         dontIncludeSubdistrict: { type: boolean }
         cargo: { type: boolean, description: 'true → Cargo (JNE, SiCepat, Sap, iDexpress)' }
+        isDangerousGoods: { type: boolean, default: false, description: 'Dangerous Goods order (didukung: JT, SiCepat HALU, iDexpress Regular)' }
+        dropShipper:
+          type: object
+          description: Data dropshipper tersimpan dari master dropshippers
+          required: [id, name, phone]
+          properties:
+            id: { type: string }
+            name: { type: string }
+            phone: { type: string }
         customProducts:
           type: array
-          description: 'Hanya JNE, SiCepat, Sap, JNT'
+          description: 'Hanya JNE, SiCepat, Sap, JNT. Aliases: quantity/orderQuantity, harga/regularPrice.'
           items:
             type: object
             required: [name]
@@ -615,6 +940,7 @@ components:
               isPaid: { type: boolean }
               batch_id: { type: string }
               batch: { type: string }
+              dropShipperId: { type: string }
               error: {}
 
     TrackingInfo:
@@ -635,4 +961,21 @@ components:
         createdAt: { type: string }
         history:
           type: array
-          items: { type: object, additionalProperties: true }
+          items:
+            type: object
+            properties:
+              date: { type: string, description: 'Format DD-MM-YYYY HH:mm (Asia/Jakarta)' }
+              desc: { type: string, description: Keterangan progres status }
+
+    WebhookPayload:
+      type: object
+      required: [cnote_no, order_id, courier, status_category]
+      properties:
+        cnote_no: { type: string, description: Nomor resi / AWB pengiriman }
+        order_id: { type: string, description: ID unik pesanan Mengantar }
+        courier: { type: string, description: Kurir penangan pesanan }
+        status_category:
+          type: string
+          description: >-
+            Kategori status pengiriman resmi Mengantar (PENDING PICKUP, PICKED UP, ON DELIVERY,
+            DELIVERED, UNDELIVERED, PICKUP FAILED, RTS, ACTIVE/WAITING NEXT PROCESS, ERROR, CANCELED/CANCELLED).

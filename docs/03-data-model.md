@@ -56,10 +56,47 @@ create table shipments (
 create index on shipments (app_order_id);
 create index on shipments (mgt_order_id);
 create index on shipments (status_simple);
+
+-- Tabel log webhook: audit trail & proteksi idempotensi (mencegah double processing)
+create table webhook_events (
+  id               uuid primary key default gen_random_uuid(),
+  event_signature  text not null unique,          -- x-signature header sebagai key idempotensi
+  timestamp_ms     bigint not null,               -- x-timestamp header
+  order_id         text,                          -- ORD-000123
+  cnote_no         text,                          -- JNE1234567890
+  courier          text,                          -- JNE
+  status_category  text not null,                 -- DELIVERED, RTS, ON_PROCESS, dll.
+  raw_payload      jsonb not null,
+  processed_at     timestamptz default now()
+);
+create index on webhook_events (order_id);
+create index on webhook_events (cnote_no);
+
+-- Tabel cache data dropshipper lokal
+create table dropshippers (
+  id               uuid primary key default gen_random_uuid(),
+  mgt_id           text unique,                   -- _id dari Mengantar API
+  name             text not null,                 -- Nama toko/brand dropshipper
+  phone            text not null,                 -- Nomor HP
+  created_at       timestamptz default now()
+);
+
+-- Tabel tracking job cetak label asinkron (PDF thermal/standar)
+create table label_generations (
+  id               uuid primary key default gen_random_uuid(),
+  mgt_label_id     text not null unique,          -- id dari POST /label-generation
+  courier          text not null,
+  format           text not null,                 -- A6 (thermal 10x15) atau A4
+  status           text not null,                 -- PENDING, PROCESSING, COMPLETED, FAILED
+  download_url     text,                          -- GCS signed URL (berlaku 15 menit)
+  order_ids        text[] not null,
+  created_at       timestamptz default now(),
+  updated_at       timestamptz default now()
+);
 ```
 
 > **Aturan turunan `status_simple`:** map `status` API → `DELIVERED` / `RTS` / selain itu `ON_GOING`
-> (lihat [01-api-reference.md](01-api-reference.md) §9.2). Tetap simpan `status` mentah + `raw` untuk detail.
+> (lihat [01-api-reference.md](01-api-reference.md) §9 & §11.3). Tetap simpan `status` mentah + `raw` untuk detail.
 
 ---
 
@@ -225,7 +262,59 @@ Untuk membuat shipment massal via file, kolom minimal per baris:
 | Quantity | jumlah item |
 | Instruksi Pengiriman | catatan customer (maks 60 char) |
 
-> Multi-origin → tiap origin jadi baris/paket terpisah.
+## 8. Data Model: Master Dropshipper
+
+Digunakan untuk pengiriman atas nama toko pihak ketiga / reseller:
+
+```json
+{
+  "id": "66ab1234567890abcdef1234",
+  "name": "Toko Sejahtera Partner",
+  "phone": "081234567890"
+}
+```
+
+- Pada pembuatan order (`POST /order`), objek ini disematkan di field `orders[].dropShipper`.
+
+---
+
+## 9. Data Model: Cetak Label PDF Asynchronous (BETA)
+
+Model data untuk pelacakan render label PDF di latar belakang:
+
+```json
+{
+  "labelGenerationId": "66d84347d792a71058fd6c10",
+  "status": "COMPLETED",
+  "format": "thermal-10x15",
+  "downloadUrl": "https://storage.googleapis.com/mengantar-bucket/download/.../label.pdf?X-Goog-Algorithm=...",
+  "errorMessage": null
+}
+```
+
+- **Siklus Status:** `PENDING` → `PROCESSING` → `COMPLETED` / `FAILED`.
+- `downloadUrl` berupa signed Google Cloud Storage URL yang berlaku selama 15 menit per request.
+
+---
+
+## 10. Data Model: Payload Webhook Resmi
+
+Struktur payload yang dikirimkan oleh server Mengantar ke Webhook URL Anda saat terjadi perubahan status:
+
+```json
+{
+  "cnote_no": "JNE1234567890",
+  "order_id": "ORD-000123",
+  "courier": "JNE",
+  "status_category": "DELIVERED"
+}
+```
+
+- **Headers:** `x-timestamp` (epoch ms), `x-signature` (HMAC-SHA256 hex dari `{x-timestamp}.{raw_body}`).
+- **Nilai umum `status_category`:**
+  - `PENDING PICKUP`, `PICKED UP`, `ON DELIVERY`, `DELIVERED`, `UNDELIVERED`, `PICKUP FAILED`, `RTS`
+  - Internal: `ACTIVE/WAITING NEXT PROCESS`, `ERROR`
+  - Pembatalan: `CANCELED` atau `CANCELLED`.
 
 ---
 <sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

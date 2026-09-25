@@ -46,19 +46,19 @@ Produk utama repo ini:
 - **Acceptance:** `examples/mengantar-client.ts` meredaksi key pada `onRequest`; `README.md`, `docs/01-api-reference.md`, dan `examples/README.md` menyebut server-only.
 
 ### REQ-2 — Endpoint catalog completeness
-- **Statement:** Ketika endpoint resmi Mengantar didokumentasikan, maka daftar endpoint harus berjumlah 18 operasi dan sinkron antara README, `docs/01-api-reference.md`, OpenAPI, dan client TypeScript.
-- **Acceptance:** `make check` melaporkan OpenAPI `paths: 13`; `make client-check` dan `make client-test` lulus.
+- **Statement:** Ketika endpoint resmi Mengantar didokumentasikan, maka daftar endpoint harus berjumlah 24 operasi dan sinkron antara README, `docs/01-api-reference.md`, OpenAPI, dan client TypeScript.
+- **Acceptance:** `make check` melaporkan OpenAPI `paths: 17`; `make client-check` dan `make client-test` lulus.
 
 ### REQ-3 — Area ID vs pickup address ID separation
 - **Statement:** Ketika flow menggunakan origin, maka docs harus membedakan `origin_id` ongkir (`PICKUP_AUTOFILL`, wilayah `_id`) dari `pickup.address_id` (`_id` alamat pickup dari `GET /address`).
 - **Acceptance:** cURL examples, examples README, OpenAPI `Pickup.address_id`, dan courier checklist memakai istilah `ORIGIN_WILAYAH_ID` vs `PICKUP_ADDRESS_ID`.
 
 ### REQ-4 — Estimation route gating
-- **Statement:** Ketika checkout menampilkan kurir atau COD, maka integrator harus mengevaluasi `unsupported` dan `unsupported_cod` sebelum opsi dikirim ke customer.
+- **Statement:** Ketika checkout menampilkan kurir atau COD, maka integrator harus mengevaluasi `unsupported`, `unsupported_cod`, dan (entri `spx`) `unsupportedOriginSpx` sebelum opsi dikirim ke customer.
 - **Acceptance:** `docs/01-api-reference.md`, `docs/02-couriers-and-rules.md`, dan `examples/README.md` menjelaskan filter unsupported.
 
 ### REQ-5 — Batch order concurrency safety
-- **Statement:** Ketika membuat shipment untuk JT Premium, Ninja, atau SiCepat, maka integrator tidak boleh mengirim `POST /order` paralel per akun.
+- **Statement:** Ketika membuat shipment untuk JT Premium atau SiCepat, maka integrator tidak boleh mengirim `POST /order` paralel per akun (Ninja discontinued per 1 Sept 2026).
 - **Acceptance:** `docs/01-api-reference.md`, `docs/02-couriers-and-rules.md`, `examples/README.md`, dan OpenAPI response `409` menyebut gabung ke satu batch.
 
 ### REQ-6 — Unpaid order handling
@@ -76,6 +76,10 @@ Produk utama repo ini:
 ### REQ-9 — Documentation validation
 - **Statement:** Ketika repo berubah, maka contributor harus menjalankan `make all` sebelum menandai pekerjaan selesai.
 - **Acceptance:** `AGENTS.md`, `Makefile`, and CI workflow reference `make check` + `client-check`.
+
+### REQ-10 — Webhook verification and signature compliance
+- **Statement:** Ketika menerima event tracking webhook dari Mengantar, receiver harus memvalidasi signature HMAC-SHA256 dari string `${timestamp}.${raw_body}` menggunakan secret webhook dan header `x-signature` & `x-timestamp`.
+- **Acceptance:** `docs/01-api-reference.md`, `examples/mengantar-client.ts`, `examples/mengantar-client.test.ts`, Astro, Next.js, PHP, dan Node.js docs menyertakan implementasi verifikasi webhook dengan official test vector.
 
 ---
 

@@ -114,6 +114,63 @@ export async function createShipmentFromJob(payload: CreateOrderRequest) {
 }
 ```
 
+## 3.2 Webhook APIRoute (Notifikasi Status Resi Real-Time)
+
+Astro API endpoint untuk menerima webhook dari Mengantar.
+Mendukung runtime Node.js maupun Cloudflare Workers (memakai `crypto.subtle` atau Node `crypto`).
+
+`src/pages/api/webhook/mengantar.ts`:
+```ts
+import type { APIRoute } from 'astro';
+import crypto from 'node:crypto';
+
+export const POST: APIRoute = async ({ request }) => {
+  const secret = import.meta.env.MENGANTAR_WEBHOOK_SECRET;
+  if (!secret) {
+    return new Response(JSON.stringify({ error: 'Server secret unconfigured' }), { status: 500 });
+  }
+
+  // 1. Baca raw text body (sebelum JSON parse)
+  const rawBody = await request.text();
+  const timestamp = request.headers.get('x-timestamp') ?? '';
+  const receivedSig = request.headers.get('x-signature') ?? '';
+
+  // 2. Hitung HMAC-SHA256
+  const expectedSig = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${rawBody}`)
+    .digest('hex');
+
+  // 3. Verifikasi signature constant-time
+  const isValid =
+    receivedSig.length === expectedSig.length &&
+    crypto.timingSafeEqual(Buffer.from(receivedSig), Buffer.from(expectedSig));
+
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 401 });
+  }
+
+  // 4. Cegah replay attack (> 5 menit)
+  const age = Math.abs(Date.now() - Number(timestamp));
+  if (Number.isNaN(age) || age > 5 * 60 * 1000) {
+    return new Response(JSON.stringify({ error: 'Timestamp expired' }), { status: 401 });
+  }
+
+  // 5. Update data pesanan
+  try {
+    const data = JSON.parse(rawBody);
+    console.log(`[Mengantar Webhook Astro] Order ${data.order_id} -> ${data.status_category}`);
+
+    return new Response(JSON.stringify({ received: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 });
+  }
+};
+```
+
 ## 4. Pemakaian di komponen (client → endpoint kita)
 
 ```ts
@@ -126,9 +183,11 @@ const r = await fetch(`/api/shipping/estimate?destination_id=${destId}&weight=${
 const rates = await r.json(); // map: { JNE: { price, estimatedSpecialPrice, ... }, ... }
 
 // Normalisasi rate untuk ditampilkan; pada checkout COD, filter unsupported_cod juga.
+// `unsupportedOriginSpx` (entri spx) diperlakukan seperti `unsupported`. `key` = key estimasi
+// (mis. "SAPLite"), bukan nama shipment — petakan via docs/02 §1.1 sebelum createOrder.
 const cod = paymentMethod === 'COD';
 const list = Object.entries(rates)
-  .filter(([, d]: any) => !d.unsupported && (!cod || !d.unsupported_cod))
+  .filter(([, d]: any) => !d.unsupported && !d.unsupportedOriginSpx && (!cod || !d.unsupported_cod))
   .filter(([, d]: any) => (d.estimatedSpecialPrice ?? d.price ?? 0) > 0)
   .map(([key, d]: any) => ({
     courier: key,
@@ -139,7 +198,7 @@ const list = Object.entries(rates)
 
 ## 5. Membaca hasil create order
 
-Response `POST /order` punya `data` berupa **array** (lihat [01-api-reference.md](01-api-reference.md) §7.5).
+Response `POST /order` punya `data` berupa **array** (lihat [01-api-reference.md](01-api-reference.md) §8).
 Ambil resi dari `cnote_no`, bukan `tracking_id`:
 
 ```ts
@@ -159,7 +218,8 @@ const shipment = {
 ```
 
 `payload.courier` harus salah satu nama shipment resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`,
-`JT`, `Ninja`, `lion`, `anteraja` (ikuti kapitalisasinya).
+`JT`, `lion`, `anteraja`, `pos`; `spx` dikonfirmasi support Mengantar tapi belum teramati live
+([02](02-couriers-and-rules.md) §1.2). *(Ninja discontinued per 1 Sept 2026)*.
 
 ## 6. Catatan
 
@@ -170,7 +230,7 @@ const shipment = {
 - **Normalisasi nama wilayah** dari `/address/search` sebelum dipakai (lihat [03-data-model.md](03-data-model.md) §6).
 - Cache hasil `estimate`/`search` sekitar 5 menit untuk mengurangi abuse dan panggilan berulang.
 - Buat shipment lewat **queue/job** dengan idempotency key/order state; serialkan create per akun untuk
-  JT Premium/Ninja/SiCepat, lalu polling resi dengan backoff hanya bila `isPaid` bukan `false`.
+  JT Premium & SiCepat.
 - Simpan konfigurasi `origin_id` dan daftar kurir aktif di satu tempat, bukan di banyak callsite.
 
 ---

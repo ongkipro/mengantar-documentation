@@ -114,6 +114,64 @@ export async function createShipmentFromJob(payload: CreateOrderRequest) {
 }
 ```
 
+## 3.2 Webhook Route Handler (Penerima Notifikasi Status Resi Real-Time)
+
+Next.js App Router Route Handler untuk menerima notifikasi status pengiriman dari Mengantar.
+Kunci utama: **baca raw body via `req.text()` sebelum parsing JSON**, lalu verifikasi signature HMAC-SHA256.
+
+`app/api/webhook/mengantar/route.ts`:
+```ts
+import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'node:crypto';
+
+export async function POST(req: NextRequest) {
+  const secret = process.env.MENGANTAR_WEBHOOK_SECRET;
+  if (!secret) {
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
+  }
+
+  // 1. Ambil raw text body dan header verifikasi
+  const rawBody = await req.text();
+  const timestamp = req.headers.get('x-timestamp') ?? '';
+  const receivedSig = req.headers.get('x-signature') ?? '';
+
+  // 2. Hitung HMAC-SHA256 dari "{x-timestamp}.{rawBody}"
+  const expectedSig = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${rawBody}`)
+    .digest('hex');
+
+  // 3. Constant-time comparison untuk proteksi timing attacks
+  const isValid =
+    receivedSig.length === expectedSig.length &&
+    crypto.timingSafeEqual(Buffer.from(receivedSig), Buffer.from(expectedSig));
+
+  if (!isValid) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+  }
+
+  // 4. Cegah replay attack (opsional: tolak request lebih tua dari 5 menit)
+  const age = Math.abs(Date.now() - Number(timestamp));
+  if (Number.isNaN(age) || age > 5 * 60 * 1000) {
+    return NextResponse.json({ error: 'Timestamp expired' }, { status: 401 });
+  }
+
+  // 5. Parse payload & proses pembaruan database
+  try {
+    const payload = JSON.parse(rawBody);
+    const { cnote_no, order_id, courier, status_category } = payload;
+
+    // TODO: Update tabel database pesanan Anda
+    console.log(`[Mengantar Webhook] Order ${order_id} (${cnote_no}) -> ${status_category}`);
+
+    // Kembalikan 200 OK sesegera mungkin (< 5 detik)
+    return NextResponse.json({ received: true });
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+}
+```
+
 ## 4. Alternatif rate lookup: Server Action
 
 Server Action dapat dipanggil dari browser, jadi gunakan hanya untuk operasi read-only seperti rate lookup.
@@ -123,6 +181,7 @@ Shipment creation tetap harus dijalankan oleh trusted job.
 ```ts
 'use server';
 import { mengantar } from '@/lib/mengantar';
+import { isRateAvailable, type CourierRate } from '@/lib/mengantar-client';
 
 export async function getRates(destinationId: string, weight: number, cod = false) {
   const originId = process.env.MENGANTAR_ORIGIN_WILAYAH_ID;
@@ -134,10 +193,12 @@ export async function getRates(destinationId: string, weight: number, cod = fals
     destinationId,
     courier: 'all',
     weight,
-  }) as Record<string, any>;
+  }) as Record<string, CourierRate>;
 
+  // isRateAvailable juga membuang entri spx dengan unsupportedOriginSpx:true.
+  // `courier` di bawah = key estimasi (mis. "SAPLite"); petakan ke nama shipment via docs/02 §1.1.
   return Object.entries(data)
-    .filter(([, rate]) => !rate.unsupported && (!cod || !rate.unsupported_cod))
+    .filter(([, rate]) => isRateAvailable(rate, cod))
     .filter(([, rate]) => (rate.estimatedSpecialPrice ?? rate.price ?? 0) > 0)
     .map(([courier, rate]) => ({
       courier,
@@ -173,7 +234,7 @@ await createShipmentFromJob({
 
 ## 6. Membaca hasil create order
 
-`POST /order` mengembalikan `data` berupa **array**; resi ada di `cnote_no` (lihat [01-api-reference.md](01-api-reference.md) §7.5):
+`POST /order` mengembalikan `data` berupa **array**; resi ada di `cnote_no` (lihat [01-api-reference.md](01-api-reference.md) §8):
 
 ```ts
 const result = await createShipmentFromJob(payload);
@@ -192,7 +253,8 @@ const shipment = {
 ```
 
 `payload.courier` harus nama shipment resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`,
-`Ninja`, `lion`, `anteraja`.
+`lion`, `anteraja`, `pos`; `spx` dikonfirmasi support Mengantar tapi belum teramati live
+([02](02-couriers-and-rules.md) §1.2). *(Ninja discontinued per 1 Sept 2026)*.
 
 ## 7. Catatan
 
@@ -202,7 +264,7 @@ const shipment = {
   meneruskan pesan upstream mentah ke browser.
 - **Normalisasi nama wilayah** dari `/address/search` (lihat [03-data-model.md](03-data-model.md) §6).
 - Buat shipment melalui queue/job dengan idempotency key/order state; serialkan create per akun untuk
-  JT Premium/Ninja/SiCepat, lalu polling resi hanya bila `isPaid` bukan `false`.
+  JT Premium & SiCepat.
 - Cache rate/search secara eksplisit di Route Handler atau data layer; shared client tidak menetapkan
   kebijakan cache framework.
 - Jangan pernah letakkan `MENGANTAR_API_KEY` di komponen client atau `NEXT_PUBLIC_*`.

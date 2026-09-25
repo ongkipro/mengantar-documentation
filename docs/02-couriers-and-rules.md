@@ -1,223 +1,154 @@
 # Kurir, Batasan & Aturan Bisnis
 
-Sumber: `includes/class-wm-constants.php` & `class-wm-shipping-method-base.php`.
-
-## 1. Kurir yang didukung
-
-Ada **tiga "ruang nama" kurir** yang berbeda di plugin — penting dipahami agar tidak salah kirim:
-
-1. **Key estimasi** — key yang muncul di response `/order/estimate` (`response.data[KEY]`). Lowercase, banyak varian.
-2. **Nama shipment** — nilai `courier` yang dikirim ke `POST /order`, hasil `map_courier_name_for_shipment()`.
-   Hanya 8 nilai: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja` (`ALLOWED_COURIERS`).
-3. **Label tampilan** — string yang dilihat customer di checkout (`courier_name_mapping()`).
-
-### 1.1 Tabel pemetaan lengkap
-
-| Key estimasi (API) | Label tampilan | Nama shipment (POST /order) | Service type |
-|--------------------|----------------|------------------------------|--------------|
-| `jne` | JNE Express | `JNE` | regular |
-| `jnecargo` / `jne trucking` / `jne trucking (cargo)` | JNE Trucking (JTR) | `JNE` | cargo |
-| `sicepat` | SiCepat Ekspress | `SiCepat` | regular |
-| `sicepatcargo` / `sicepat gokil` | SiCepat Cargo Kilat (Gokil) | `SiCepat` | cargo |
-| `sap` | SAP Express | `Sap` | regular |
-| `saplite` | SAP Lite | `Sap` | lite |
-| `sapcargo` | SAP Cargo | `Sap` | cargo |
-| `idexpress` | IDExpress | `iDexpress` | regular |
-| `idlite` / `idl` | IDExpress IDLite (Flat) | `iDexpress` | lite |
-| `idexpresscargo` / `idexpress cargo` | IDExpress IDTruck (Cargo) | `iDexpress` | cargo |
-| `jt` | J&T Express | `JT` | regular |
-| `lion` | Lion Parcel | `lion` | regular |
-| `anteraja` | Anteraja | `anteraja` | regular |
-| `ninja` | Ninja Xpress | `Ninja` | regular |
-| `paxel` | Paxel | (lihat catatan) | regular |
-| `wahana` | Wahana | (lihat catatan) | regular |
-| `pos` | POS Indonesia | (lihat catatan) | regular |
-
-> Catatan: `paxel`, `wahana`, `pos` ada di whitelist/label-mapping tetapi class shipping method-nya
-> tidak aktif (mis. `WM_Shipping_Pos` di-disable). Mereka bisa muncul di estimasi `all` tapi belum tentu
-> bisa dibuat shipment-nya. Service type ditentukan dari nama: mengandung `cargo`/`trucking`/`gokil` → cargo,
-> `lite`/`idl` → lite, selain itu → regular.
-
-### 1.2 Class shipping method → kurir
-
-| Class | courier_name (estimasi) | Judul metode |
-|-------|-------------------------|--------------|
-| `WM_Shipping_All` | `all` | Mengantar All Couriers (dinamis per kurir) |
-| `WM_Shipping_JNE` | `JNE` | Mengantar JNE |
-| `WM_Shipping_Sicepat` | `SiCepat` | Mengantar SiCepat |
-| `WM_Shipping_JT` | `J&T Express` | Mengantar J&T Express |
-| `WM_Shipping_Lion` | `Lion Parcel` | Mengantar Lion Parcel |
-| `WM_Shipping_Ninja` | `Ninja` | Mengantar Ninja |
-| `WM_Shipping_Anteraja` | `Anteraja` | Mengantar Anteraja |
-| `WM_Shipping_SAP` | `SAP` | Mengantar SAP |
-| `WM_Shipping_IDExpress` | `IDExpress` | Mengantar IDExpress |
-
-WC method ID berformat `woo_mengantar_shipping_{courier}` (mis. `woo_mengantar_shipping_jne`).
-Untuk metode `all`, rate per kurir punya ID `..._jne`, `..._sicepat`, dst.
+Sumber: Dokumentasi resmi Mengantar API (2026) & analisis implementasi live.
 
 ---
 
-## 2. Batas berat per jenis layanan
+## 1. Kurir yang Didukung & Pemetaan
 
-| Service type | Batas berat |
-|--------------|-------------|
-| Regular | 50 kg |
-| Cargo | 100 kg |
-| Lite | 0.5 kg |
+Ada **tiga "ruang nama" kurir** yang berbeda dalam ekosistem Mengantar:
 
-Rate kurir di-skip bila berat paket melebihi batas service type-nya.
-Berat minimum yang dikirim ke API: **1 kg** (di-clamp `max(1, weight)`).
+1. **Key Estimasi** — Key yang muncul di respon `/order/estimate?courier=all` (`response.data[KEY]`). Casing **campuran**
+   dan berbeda dari nama shipment (mis. `SAP` vs `Sap`, `SAPLite`, `SapCargo`, `spx`). Plugin WooCommerce mencocokkan
+   key dalam bentuk lowercase **[plugin]** — cocokkan key secara **case-insensitive** agar tahan perubahan casing.
+2. **Nama Shipment** — Nilai string persis yang dikirimkan pada field `courier` di `POST /order`.
+   **8 nilai resmi** (docs resmi): `"JNE"`, `"SiCepat"`, `"Sap"`, `"iDexpress"`, `"JT"`, `"lion"`, `"anteraja"`, `"pos"`,
+   plus **`"spx"`** — dikonfirmasi support Mengantar, **belum** ada di docs resmi dan **belum teramati** di create-order live (lihat §1.2).
+3. **Label Tampilan** — Nama ramah yang ditampilkan kepada pembeli di halaman checkout web/storefront.
 
----
+### 1.1 Tabel Pemetaan Kurir Lengkap
 
-## 3. Aturan COD (Cash on Delivery)
+Kolom *Key Estimasi* memakai casing persis dari respon live `GET /order/estimate?courier=all` (produksi, 2026-09-25).
+Set key bisa berbeda per akun/rute — selalu iterasi `Object.entries(data)`, jangan hardcode.
 
-### Batas minimum COD
+| Key Estimasi (live) | Label Tampilan | Nama Shipment (`POST /order`) | Status & Tipe Layanan |
+|---------------------|----------------|------------------------------|------------------------|
+| `JNE` | JNE Express | `JNE` | Aktif (Regular) |
+| `JNECargo` | JNE Trucking (JTR) | `JNE` + `cargo: true` | Aktif (Cargo) |
+| `SiCepat` | SiCepat Ekspres | `SiCepat` | Aktif (Regular) |
+| `SiCepatCargo` | SiCepat Cargo Kilat (Gokil) | `SiCepat` + `cargo: true` | Aktif (Cargo) |
+| `SAP` | SAP Express | `Sap` | Aktif (Regular) |
+| `SAPLite` | SAP Lite | `Sap` | Aktif (Lite) |
+| `SapCargo` | SAP Cargo | `Sap` + `cargo: true` | Aktif (Cargo) |
+| `iDexpress` | IDExpress | `iDexpress` | Aktif (Regular) |
+| `iDexpressCargo` | IDExpress IDTruck | `iDexpress` + `cargo: true` | Aktif (Cargo) |
+| `JT` | J&T Express | `JT` | Aktif (Regular) |
+| `lion` | Lion Parcel | `lion` | Aktif (Regular) |
+| `anteraja` | Anteraja | `anteraja` | Aktif (Regular) |
+| `pos` | POS Indonesia | `pos` | **Aktif Resmi** (Regular) |
+| `spx` | SPX Express (Shopee Express) | `spx` ⚠️ *dikonfirmasi support, belum teramati* | Aktif di estimasi (live 2026-09-25) |
+| — *(dihilangkan dari `all`)* | Ninja Xpress | — | ❌ **Discontinued per 1 Sept 2026** |
 
-| Kurir | Min COD (IDR) |
-|-------|---------------|
-| Umum | 1.000 |
-| Lion | 10.000 |
+> Key dari versi lama repo ini / plugin (`idlite`/`idl`, `paxel`, `wahana`) **tidak muncul** di respon
+> `courier=all` 2026-09-25. Jika muncul di akunmu, perlakukan sebagai kurir tak dikenal sampai terverifikasi.
 
-### Batas maksimum COD per kurir
+### 1.2 Catatan Khusus Ninja & SPX
 
-| Kurir | Max COD (IDR) |
-|-------|---------------|
-| JNE | 5.000.000 |
-| iDexpress | 5.000.000 |
-| Lion | 5.000.000 |
-| SiCepat | 2.500.000 |
-| J&T (JT) | 2.000.000 |
-| AnterAja | 2.000.000 |
-| Ninja | 10.000.000 |
-
-### Aturan tambahan COD
-- **SAP Cargo tidak mendukung COD** → di-skip saat metode bayar = COD.
-- Saat memilih rate untuk order COD, plugin mengirim `cod_amount` = nilai isi keranjang.
-  (Docs resmi menamai param ini **`COD_AMOUNT`** huruf besar — pakai casing itu untuk implementasi baru.)
-- Rate di-skip bila COD di luar rentang min–max kurir.
-
----
-
-## 4. Perhitungan biaya layanan COD (markup)
-
-Plugin menambahkan fee COD di atas ongkir (opsi toko). Variabel terkait:
-
-| Opsi | Default | Arti |
-|------|---------|------|
-| `wm_cod_courier_fee_percent` | 3 | Persen fee COD dari nilai |
-| `wm_cod_fee_type` | `product_shipping` | Basis perhitungan fee |
-| `wm_cod_courier_minimal_fee` | 0 | Fee minimum |
-| `wm_cod_courier_maximal_fee` | (kosong) | Fee maksimum (opsional) |
-
-**Rumus fee COD per produk** (`calculate_cod_fee`):
-```
-base    = line_total produk (atau line_total + ongkir, tergantung fee_type)
-fee     = base × fee_percent / 100
-if (min_fee > 0 && fee < min_fee) fee = min_fee
-if (max_fee > 0 && fee > max_fee) fee = max_fee
-cod_fee_paket = fee TERBESAR di antara semua item dalam paket
-```
-- `fee_type = product_only` → base = harga produk saja.
-- `fee_type = product_shipping` → base = harga produk + ongkir terpilih.
-- Fee ini ditambah ke ongkir yang ditampilkan (`total = ongkir + cod_fee`).
-
-**Override per produk** (meta produk, menimpa setting global bila `_mengantar_cod_override = yes`):
-`_mengantar_cod_fee_percent`, `_mengantar_cod_fee_type`, `_mengantar_cod_min_fee`, `_mengantar_cod_max_fee`.
-
-**Hubungan dengan field `COD` di `POST /order`:** nilai `COD` per item = `nilai_barang +
-porsi_ongkir + porsi_cod_fee` (proporsional terhadap total nilai keranjang, lalu di-`round()`).
-Jadi yang ditagih kurir ke penerima = total belanja + ongkir + fee COD.
-
-> Perhitungan fee ini **logika toko**, bukan dari API Mengantar. Saat membangun ulang, kamu
-> bebas memakai aturan COD sendiri — yang penting nilai `COD` yang dikirim ke API benar.
+1. **Ninja Discontinued:** Mulai **1 September 2026**, kurir Ninja resmi dihapus dari API publik Mengantar.
+   Estimasi `courier=Ninja` → HTTP `400` `{"success":false,"message":"Courier is not available","code":"COURIER_DISABLED"}`;
+   dengan `courier=all`, `Ninja`/`NinjaCargo` dihilangkan. Order/batch Ninja lama tetap bisa dibaca (docs resmi).
+2. **SPX Express (Shopee Express) — tersedia di estimasi `all`** (live, produksi, 2026-09-25; read-only, tanpa order dibuat):
+   - `courier=all` (dengan/tanpa `COD_AMOUNT`) mengembalikan key **`spx`**. Contoh Jakarta → Jakarta Selatan 1 kg:
+     `price` 13700, `estimate_delivery` `"1 - 3 days"`, `estimatedDate` `"2-4 hari"`, `unsupported_cod: false`.
+     Rute jauh (area Jayapura): `price` 34000, `"3 - 4 days"`, COD didukung.
+   - Entri `spx` membawa **field tambahan** yang belum ada di docs resmi: `unsupportedOriginSpx`, `unsupportedPickup`,
+     dan `pickupSchedule` (map `tanggal → [{ timeRangeId, start, end, timeEpoch }]`) — lihat
+     [01-api-reference.md](01-api-reference.md) §5.1.
+   - **`unsupportedOriginSpx: true` → perlakukan sama dengan `unsupported: true`** (origin tidak bisa dilayani SPX).
+     Arti `unsupportedPickup` **belum dipastikan** **[verifikasi]** — teramati `false`; jangan tawarkan pickup SPX bila `true`.
+   - **Kontradiksi estimasi single-courier:** `courier=<nama>` divalidasi *case-sensitive* terhadap **nama shipment**
+     (`JT`, `Sap` → 200; `SAP`, `sap`, `jt` → 400 `Invalid courier`). **Semua** ejaan SPX yang dicoba (`spx`, `SPX`, `Spx`,
+     `SPX Express`, `Shopee Express`, `ShopeeExpress`, `SPXExpress`, `shopee`, `Shopee`, `SPXID`, `spxid`, `ShopeeXpress`,
+     `Shopee Xpress`, `SPX_EXPRESS`, `spx_express`, `spxexpress`) → `400 {"success":false,"message":"Invalid courier"}`.
+     Jadi: **ambil tarif SPX hanya dari `courier=all`**.
+   - **Create order:** support Mengantar mengonfirmasi SPX bisa dipakai di `POST /order` dengan `courier: "spx"`,
+     tetapi **belum ada di docs resmi dan belum teramati** di create-order live **[verifikasi]**. Uji dulu dengan satu
+     order sebelum mengaktifkan SPX di produksi. Batas COD, cargo, DG, dan `customProducts` untuk SPX belum diketahui.
 
 ---
 
-## 5. Berat volumetrik (opsional)
+## 2. Layanan Khusus: Dangerous Goods (DG) & Cargo
 
-| Opsi | Default | Arti |
-|------|---------|------|
-| `wm_enable_volumetric` | `no` | Aktifkan berat volumetrik |
-| `wm_volumetric_divisor` | 6000 | Pembagi umum (cm³ → kg) |
-| `wm_volumetric_divisor_jne` | 4000 | Pembagi khusus JNE |
+### 2.1 Dangerous Goods (Barang Berbahaya / Cairan / Aerosol / Baterai)
+Untuk produk yang membutuhkan perlakuan khusus (Dangerous Goods):
+- **Cek Ongkir:** Kirim query `isDangerousGoods=true` pada endpoint `/order/estimate`, `/allEstimatePublic`, atau `/allEstimate3PL`.
+- **Create Order:** Set field `isDangerousGoods: true` (JSON Boolean) pada masing-masing item di `orders[]`.
+- **Pemetaan Service Kurir DG:**
+  | Kurir | Layanan Otomatis | Keterangan |
+  |-------|------------------|------------|
+  | `SiCepat` | `HALU` | Otomatis dialihkan ke armada SiCepat HALU |
+  | `iDexpress` | `Regular service` | Dikirim via armada reguler berizin DG |
+  | `JT` | `Regular DG` | Didukung resmi untuk pengiriman DG |
+  *(Kurir lain belum mendukung bendera Dangerous Goods via public API).*
 
-Rumus standar: `berat_volumetrik = (P × L × T) / divisor`. Berat tagih = `max(berat_aktual, berat_volumetrik)`.
-
----
-
-## 6. Validasi alamat
-
-- Alamat tujuan minimal **10 karakter** (`MIN_DESTINATION_ADDRESS_LENGTH`).
-  Plugin menolak checkout bila lebih pendek.
-
----
-
-## 7. Jenis pickup & volume
-
-| Opsi | Nilai | Default |
-|------|-------|---------|
-| Tipe pickup | `scheduledPickup` (dijemput) / `dropOff` (antar sendiri) | `scheduledPickup` |
-| Volume kendaraan | `volumeMotor` / `volumeMobil` / `volumeTruck` | `volumeMobil` |
-
-Nilai enum di atas dikonfirmasi dari dropdown setting plugin (Scheduled Pickup / Drop Off; Volume Motor / Mobil / Truck).
-
-**Field `assignee` (opsional di `POST /order`):** ID/penanda kurir-lapangan/agen yang ditugaskan
-mengambil paket. Plugin hanya mengirimnya bila terisi (mis. dari kolom `Assignee` saat import).
-Boleh dikosongkan.
-
-- `scheduledPickup` butuh `time_id` (jadwal dari endpoint `/time`) **dan** `volume`.
-- `dropOff` tidak butuh jadwal.
-- API Mengantar menerima jadwal minimal **90 menit ke depan**; plugin memakai buffer aman **2 jam** (`WM_PICKUP_TIME_HORIZON_SECONDS = 7200`) untuk mengurangi risiko slot mepet.
-- Auto-schedule: bila tidak ada jadwal cocok, plugin bisa otomatis `POST /time` membuat slot baru,
-  atau menandai shipment `pending_pickup_time` untuk dipilih manual (lihat [04-how-it-works.md](04-how-it-works.md)).
-
-**Format saat `POST /time` (docs resmi):**
-- `date` = **`mm-dd-yyyy`** (bulan-tanggal-tahun; contoh `11-27-2022`) — **bukan** ISO `YYYY-MM-DD`.
-- `time` = salah satu slot tetap: `9:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00, 18:00`.
-
-## 7b. Konkurensi batch (JT Premium, Ninja, SiCepat)
-
-Untuk kurir yang resinya (`cnote_no`) di-generate di sisi Mengantar — **JT Premium, Ninja, SiCepat** —
-nomor diberi berurutan per akun, jadi **hanya satu batch boleh diproses dalam satu waktu per akun**.
-
-- **Jangan** kirim beberapa request `POST /order` bersamaan (paralel) untuk kurir ini.
-- Gabungkan semua order ke **satu batch / satu request**.
-- Request konkuren (JT Premium) → **HTTP `409 Conflict`** (lihat [08-error-catalog.md](08-error-catalog.md) §A).
-
-## 7c. `customProducts` (rincian produk manual)
-
-Field `orders.customProducts[]` di `POST /order` **saat ini hanya didukung untuk `JNE`, `SiCepat`, `Sap`, `JNT`**.
-Bila diisi: `orders.weight` harus = Σ(qty × weight) dan `orders.quantity` = Σ(qty) semua item
-(mengikuti logika daftar produk in-app). Alias field diterima: `qty`←`quantity`/`orderQuantity`,
-`price`←`harga`/`regularPrice`.
+### 2.2 Pengiriman Kargo (`orders[].cargo`)
+Untuk paket berukuran besar / grosir:
+- Set field `cargo: true` pada `orders[]`.
+- Kurir yang mendukung opsi cargo: **`JNE` (JTR), `SiCepat` (Gokil), `Sap` (SAP Cargo), `iDexpress` (IDTruck)**.
 
 ---
 
-## 8. Mode sandbox & Limitasi
+## 3. Batas Berat & Aturan COD (Cash on Delivery)
 
-- Aktif bila opsi `wm_sandbox_mode = yes` **dan** sandbox API key terisi.
-- Saat aktif: base URL → `https://sandbox.mengantar.com`, dan key produksi diganti sandbox key.
-- Gunakan sandbox untuk semua testing create-order agar tidak membuat shipment asli.
+### 3.1 Batas Berat Layanan
+- **Regular:** Maksimal 50 kg.
+- **Cargo:** Maksimal 100 kg.
+- **Lite:** Maksimal 0.5 kg (SAPLite, IDLite).
+- Berat minimum yang dikirim ke API: **1 kg** (di-clamp `Math.max(1, weight)`).
 
-> ⚠️ **Sandbox Traps (Penting):** Lingkungan Sandbox Mengantar memiliki batasan keras yang sering disangka sebagai bug integrasi. Jangan buang waktu debugging hal berikut:
-> 1. **JNE:** Titik origin *wajib* dari Jakarta. (Akan error `Content not confirm our security Policy` jika dari kota lain).
-> 2. **SAP:** Hanya mengizinkan order Non-COD dengan rute Jakarta → Jakarta. (Akan error `Service tidak ditemukan dalam kontrak`).
-> 3. **Saldo:** Top-up saldo sandbox harus diselesaikan melalui Midtrans Sandbox Simulator sebelum menguji flow non-COD/pay-unpaid.
+### 3.2 Batas Nilai COD per Kurir
+| Kurir | Min COD (IDR) | Max COD (IDR) | Catatan Khusus |
+|-------|--------------:|--------------:|----------------|
+| JNE | 1.000 | 5.000.000 | Mendukung COD Nasional |
+| iDexpress | 1.000 | 5.000.000 | Mendukung COD Nasional |
+| Lion Parcel | 10.000 | 5.000.000 | Min COD Rp 10.000 |
+| SiCepat | 1.000 | 2.500.000 | Max COD Rp 2.500.000 |
+| J&T (JT) | 1.000 | 2.000.000 | Max COD Rp 2.000.000 |
+| AnterAja | 1.000 | 2.000.000 | Max COD Rp 2.000.000 |
+| POS | 1.000 | 2.000.000 | Mengikuti coverage POS |
+| SAP Cargo | — | — | ❌ **Tidak mendukung COD** |
+| SPX (`spx`) | ? | ? | COD teramati didukung di estimasi (2026-09-25); batas belum diketahui **[verifikasi]** |
+
+> ⚠️ Selalu evaluasi flag respon estimasi:
+> - `unsupported: true` → Kurir tidak melayani wilayah tersebut.
+> - `unsupported_cod: true` → Kurir dapat mengantar, tetapi **COD dilarang** di wilayah/layanan tersebut.
+> - `unsupportedOriginSpx: true` (hanya entri `spx`) → origin tidak dilayani SPX; perlakukan seperti `unsupported: true`.
 
 ---
 
-## 9. Checklist alur end-to-end
+## 4. Konkurensi Batch (JT Premium & SiCepat)
 
-1. **Origin pickup**: pastikan ada minimal satu alamat pickup (`GET /address`) → simpan `_id` sebagai `pickup_address_id` untuk `/time` dan `POST /order`.
-2. **Origin wilayah**: pakai `PICKUP_AUTOFILL` dari alamat pickup sebagai `origin_id` untuk estimasi ongkir.
-3. **Destination**: autocomplete `GET /address/search?keyword=` → ambil `_id` sebagai `destination_id`.
-4. **Estimasi**: `GET /order/estimate?origin_id=&destination_id=&courier=all&weight=` → buang rate dengan `unsupported=true`; untuk COD, buang juga `unsupported_cod=true`.
-5. **Validasi**: cek harga positif serta batas berat/COD kurir sebelum opsi dikirim ke checkout.
-6. **(Jika scheduledPickup)**: `GET /time?address={pickup_address_id}` → pilih `time_id`.
-7. **Create**: `POST /order` dengan `courier` (nama shipment), `pickup`, `orders[]` → simpan `cnote_no`, `ORDER_ID`, `isPaid`, dan `batch_id`.
-8. **Unpaid**: bila `isPaid=false`, jangan buat ulang order; top-up lalu panggil `POST /order/pay-unpaid`.
-9. **Tracking**: `GET /order?order_id=` / `?tracking_id=` untuk update status; tautkan ke halaman tracking Mengantar.
+Untuk kurir yang nomor resinya (`cnote_no`) di-generate berurutan di sisi server Mengantar:
+- **Kurir terdampak:** **`JT Premium`** dan **`SiCepat`**. *(Ninja sudah discontinued)*.
+- **Aturan Arsitektur:** **Hanya satu proses pembuatan batch order yang diizinkan berjalan dalam satu waktu per akun**.
+- Jangan pernah menjalankan `POST /order` secara paralel/multithreaded untuk kurir-kurir ini.
+- Gabungkan pesanan ke dalam satu array batch (`orders: [...]`). Jika sistem Anda mengirim request kedua sebelum request pertama tuntas, API akan mengembalikan **HTTP `409 Conflict`**:
+  ```json
+  { "success": false, "message": "Sedang ada proses pembuatan order... Mohon gabungkan semua order dalam 1 batch..." }
+  ```
+
+---
+
+## 5. Invariant Data `customProducts`
+
+Field `orders.customProducts[]` (didukung kurir `JNE`, `SiCepat`, `Sap`, `JNT`):
+- Alias field yang diterima sistem:
+  - Jumlah: `qty` / `quantity` / `orderQuantity`
+  - Harga: `price` / `harga` / `regularPrice`
+  - Berat: Default 1 kg jika tidak diisi.
+- **Validasi Wajib Sistem:**
+  - `orders.weight` harus sama persis dengan $\sum (\text{qty} \times \text{weight})$.
+  - `orders.quantity` harus sama persis dengan $\sum (\text{qty})$.
+  Jika terjadi selisih, request pembuatan order akan gagal validasi.
+
+---
+
+## 6. Jebakan Lingkungan Sandbox (Sandbox Traps)
+
+Lingkungan Sandbox Mengantar (`https://sandbox.mengantar.com`) memiliki pembatasan khusus dari mitra ekspedisi:
+1. **JNE Sandbox:** Origin *wajib* berlokasi di **Jakarta** (destination bebas). Origin luar Jakarta akan memicu error: `Content not confirm our security Policy`.
+2. **SAP Sandbox:** Hanya mendukung rute **Jakarta → Jakarta** dan memblokir seluruh order COD. Rute lain memicu: `Service tidak ditemukan dalam kontrak`.
+3. **Webhook Sandbox:** Notifikasi Webhook **belum aktif di sandbox** karena status order sandbox bersifat statis (tidak bergerak dari kurir nyata). Pengujian webhook disarankan menggunakan *Official Test Vector* atau di lingkungan staging produksi.
 
 ---
 <sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

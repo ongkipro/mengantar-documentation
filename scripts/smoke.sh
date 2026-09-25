@@ -53,8 +53,10 @@ ORIGIN_WIL=$(echo "$r" | jq -r '.data[0].PICKUP_AUTOFILL // empty') # wilayah _i
 if [ -n "$ORIGIN_WIL" ] && [ -n "$DEST" ]; then
   echo "4) Estimasi ongkir (all) — origin_id = PICKUP_AUTOFILL (wilayah), bukan pickup _id"
   r=$(get "$PREFIX/order/estimate?origin_id=$ORIGIN_WIL&destination_id=$DEST&courier=all&weight=1")
-  n=$(echo "$r" | jq -r '[.data | to_entries[] | select(.value.unsupported != true)] | length' 2>/dev/null || echo 0)
-  [ "$n" -gt 0 ] 2>/dev/null && ok "$n kurir tersedia" || bad "tak ada kurir tersedia / bentuk response beda"
+  # unsupportedOriginSpx (entri spx) diperlakukan seperti unsupported.
+  n=$(echo "$r" | jq -r '[.data | to_entries[] | select(.value.unsupported != true and .value.unsupportedOriginSpx != true)] | length' 2>/dev/null || echo 0)
+  keys=$(echo "$r" | jq -r '.data | keys | join(",")' 2>/dev/null || echo "?")
+  [ "$n" -gt 0 ] 2>/dev/null && ok "$n kurir tersedia (key: $keys)" || bad "tak ada kurir tersedia / bentuk response beda"
 else
   echo "4) Estimasi ongkir — dilewati (butuh origin & destination)"
 fi
@@ -64,8 +66,18 @@ r=$(get "$PREFIX/invoices")
 if echo "$r" | jq -e '.success == true' >/dev/null 2>&1; then
   ok "saldo: $(echo "$r" | jq -r '.balance // "?"')"; else bad "gagal ambil invoice"; fi
 
+echo "6) Cari dropshipper (read-only)"
+r=$(get "$PREFIX/dropshippers?name=")
+if echo "$r" | jq -e '.success == true' >/dev/null 2>&1; then
+  ok "dropshippers endpoint OK"; else bad "gagal akses dropshippers"; fi
+
+echo "7) List user / assignee (read-only)"
+r=$(get "$PREFIX/my-users")
+if echo "$r" | jq -e '.success == true' >/dev/null 2>&1; then
+  ok "my-users endpoint OK"; else bad "gagal akses my-users"; fi
+
 if [ $FULL -eq 1 ] && [ -n "$PICKUP_ID" ]; then
-  echo "6) [FULL] Tambah + hapus slot pickup (mm-dd-yyyy) — address_id = pickup _id"
+  echo "8) [FULL] Tambah + hapus slot pickup (mm-dd-yyyy) — address_id = pickup _id"
   d=$(date -d "+3 days" +%m-%d-%Y 2>/dev/null || date -v+3d +%m-%d-%Y 2>/dev/null)
   payload=$(jq -nc --arg address_id "$PICKUP_ID" --arg date "$d" \
     '{address_id:$address_id,date:$date,time:"13:00"}')

@@ -4,11 +4,14 @@ Kode contoh server-only untuk integrasi Mengantar. **Bukan** paket npm — salin
 
 | File | Isi |
 |------|-----|
-| [`mengantar-client.ts`](mengantar-client.ts) | Client TypeScript tanpa dependensi (fetch global). Semua 18 endpoint, typed, key di path, error terstruktur. |
+| [`mengantar-client.ts`](mengantar-client.ts) | Client TypeScript tanpa dependensi (fetch global). Semua 24 endpoint, typed, key di path, helper verifikasi webhook Web Crypto, error terstruktur. |
+| [`mengantar-client.test.ts`](mengantar-client.test.ts) | Suite pengujian kontrak (10 test cases) memvalidasi normalisasi tanggal, test vector webhook resmi, parameter safety, endpoint envelopes, filter ketersediaan rate (SPX), dan error kurir. |
 
-Untuk contoh berbasis framework (route handler / server endpoint), lihat
-[`../docs/05-integration-astro.md`](../docs/05-integration-astro.md) dan
-[`../docs/06-integration-nextjs.md`](../docs/06-integration-nextjs.md).
+Untuk contoh berbasis framework:
+- **Astro:** [`../docs/05-integration-astro.md`](../docs/05-integration-astro.md) (Server Endpoints & Webhook APIRoute)
+- **Next.js:** [`../docs/06-integration-nextjs.md`](../docs/06-integration-nextjs.md) (App Router Route Handlers & Server Actions)
+- **PHP Native & Laravel:** [`../docs/13-integration-php.md`](../docs/13-integration-php.md) (`MengantarClient.php` & Controller)
+- **Node.js, Express, & Fastify:** [`../docs/14-integration-node-js.md`](../docs/14-integration-node-js.md) (Raw body HMAC signature handling)
 
 ## Pakai client
 
@@ -33,7 +36,9 @@ const originWilayahId = pickupAddress.PICKUP_AUTOFILL; // wilayah _id untuk esti
 const rates = await mgt.estimate({
   originId: originWilayahId, destinationId: dest._id, courier: "all", weight: 2,
 });
-// Sebelum ditampilkan: buang rate `unsupported`; untuk COD, buang juga `unsupported_cod`.
+// Sebelum ditampilkan: filter dengan isRateAvailable(rate, cod) — membuang `unsupported`,
+// `unsupportedOriginSpx` (entri spx), dan untuk COD juga `unsupported_cod`.
+// Key map (mis. "SAP", "SAPLite", "spx") ≠ nama shipment ("Sap", "spx") — petakan via docs/02 §1.1.
 
 // 3) (opsional) skor performa kurir untuk kota tujuan
 const perf = await mgt.getCourierPerformance(dest.CITY_NAME!, rates as Record<string, any>);
@@ -70,7 +75,9 @@ try {
 - `POST /time` `date` divalidasi lalu dikonversi ke **`mm-dd-yyyy`** via `toMengantarDate()`.
 - Semua write endpoint memakai JSON sesuai kontrak resmi.
 - Opsi `clientSource: "woocommerce"` menyuntikkan header `x-client-source` otomatis.
-- `success:false` / HTTP non-2xx → `throw MengantarError` dengan `.code` (X000–X003 / 409).
+- `success:false` / HTTP non-2xx → `throw MengantarError` dengan `.code` (X000–X003 / 409 / 429, atau field `code` body seperti `COURIER_DISABLED`).
+- `isRateAvailable(rate, cod)` — filter ketersediaan rate (termasuk `unsupportedOriginSpx` untuk SPX).
+- Tipe `EstimateCourier` mengecualikan `spx`: estimasi single-courier SPX ditolak `400 Invalid courier` — ambil dari `courier: "all"`.
 - `createOrder()` mempertahankan envelope: order ada di `.data[]`, sedangkan `.batch_id` dan `.errors` tetap tersedia untuk unpaid/partial failure.
 
 **Belum di-handle (sengaja — logika app-mu):** caching GET, retry/backoff, queue create shipment,
@@ -83,24 +90,19 @@ Pola siap-pakai yang menggabungkan beberapa endpoint. Semua memakai instance `mg
 ### 1) Pilih kurir termurah yang tersedia
 
 ```ts
-function cheapestCourier(
-  rates: Record<string, {
-    price?: number;
-    estimatedSpecialPrice?: number;
-    unsupported?: boolean | null;
-    unsupported_cod?: boolean | null;
-  }>,
-  cod = false,
-) {
+import { isRateAvailable, type CourierRate } from "./mengantar-client";
+
+// `courier` yang dikembalikan = KEY estimasi (mis. "SAPLite"), bukan nama shipment — petakan dulu sebelum POST /order.
+function cheapestCourier(rates: Record<string, CourierRate>, cod = false) {
   return Object.entries(rates)
-    .filter(([, r]) => !r.unsupported && (!cod || !r.unsupported_cod))
+    .filter(([, r]) => isRateAvailable(r, cod))
     .filter(([, r]) => (r.estimatedSpecialPrice ?? r.price ?? 0) > 0)
     .map(([courier, r]) => ({ courier, harga: r.estimatedSpecialPrice ?? r.price! }))
     .sort((a, b) => a.harga - b.harga)[0];
 }
 
 const rates = await mgt.estimate({ originId, destinationId, courier: "all", weight: 2 });
-const pilihan = cheapestCourier(rates as Record<string, any>, paymentMethod === "COD");
+const pilihan = cheapestCourier(rates as Record<string, CourierRate>, paymentMethod === "COD");
 ```
 
 ### 2) Kurir "terbaik" via skor performa
@@ -152,7 +154,84 @@ if (order.isPaid === false) {
 }
 ```
 
+### 6) Verifikasi Webhook Resmi (HMAC-SHA256)
+
+```ts
+import { verifyMengantarWebhookSignature } from "./mengantar-client";
+
+// Dapatkan raw body string (jangan parsed JSON), header timestamp, dan signature
+const rawBody = '{"cnote_no":"JNE1234567890","order_id":"ORD-000123","courier":"JNE","status_category":"DELIVERED"}';
+const timestamp = req.headers["x-timestamp"] as string;
+const signature = req.headers["x-signature"] as string;
+const webhookSecret = process.env.MENGANTAR_WEBHOOK_SECRET!;
+
+const isValid = await verifyMengantarWebhookSignature({
+  rawBody,
+  timestamp,
+  signature,
+  secret: webhookSecret,
+});
+
+if (!isValid) {
+  throw new Error("Invalid signature: Webhook ditolak");
+}
+```
+
+### 7) Pengiriman via Dropshipper
+
+```ts
+// 1. Simpan identitas dropshipper bila belum ada
+const dropshipper = await mgt.addDropshipper({
+  name: "Toko Cantik Official",
+  phone: "081299887766",
+});
+
+// 2. Gunakan id dropshipper pada pembuatan order
+const created = await mgt.createOrder({
+  courier: "JNE",
+  pickup: { type: "scheduledPickup", address_id: pickupAddress._id, volume: "volumeMobil" },
+  orders: [{
+    customerAddressDataId: dest._id,
+    customerAddress: "Jl. Mawar No. 10, Surabaya",
+    customerName: "Rina",
+    customerPhone: "08123456789",
+    parcelContent: "Dress Silk",
+    weight: 1,
+    quantity: 1,
+    goodsValue: 250000,
+    dropShipper: {
+      id: dropshipper._id,
+      name: dropshipper.name,
+      phone: dropshipper.phone,
+    },
+  }],
+});
+```
+
+### 8) Request & Polling Cetak Label PDF Asinkron
+
+```ts
+// 1. Request cetak label (return HTTP 202 dengan status PENDING)
+const reqLabel = await mgt.requestLabelGeneration({
+  courier: "JNE",
+  orderIds: ["ORDER_OBJECT_ID_1", "ORDER_OBJECT_ID_2"],
+  format: "A6", // "A6" thermal atau "A4"
+  type: "multiple",
+});
+const labelJobId = reqLabel.data?.id!;
+
+// 2. Polling status sampai COMPLETED (maks 8 aksi/menit)
+for (let i = 0; i < 5; i++) {
+  await new Promise(r => setTimeout(r, 10_000));
+  const statusRes = await mgt.getLabelGenerationStatus(labelJobId);
+  if (statusRes.data?.status === "COMPLETED") {
+    console.log("Download URL label PDF (berlaku 15 menit):", statusRes.data.downloadUrl);
+    break;
+  }
+}
+```
+
 ## ⚠️ Konkurensi batch
 
-Untuk **JT Premium / Ninja / SiCepat**, jangan panggil `createOrder()` paralel per akun —
-gabungkan semua order ke **satu** panggilan (`orders: [...]`). Request konkuren → `MengantarError` code `409`.
+Untuk **JT Premium / SiCepat**, jangan panggil `createOrder()` paralel per akun —
+gabungkan semua order ke **satu** panggilan (`orders: [...]`). Request konkuren → `MengantarError` code `409`. *(Catatan: Ninja Xpress sudah discontinued per 1 Sept 2026)*.

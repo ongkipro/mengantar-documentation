@@ -11,7 +11,8 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | **destination_id** (estimate) | ID **wilayah** tujuan (kecamatan/kelurahan). Sumber: `GET /address/search` → `_id`. Dipakai juga sbg `customerAddressDataId`. |
 | **pickup address _id** | `_id` objek alamat pickup dari `GET /address`. Dipakai utk `pickup.address_id` (create order) & `GET /time?address=`. Beda dari origin_id estimate. |
 | **courier (estimasi)** | Key kurir di response `/order/estimate` (mis. `jne`, `sicepatcargo`). Banyak varian. |
-| **courier (shipment)** | Nama kurir untuk `POST /order` — 8 nilai resmi (`JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja`). |
+| **courier (shipment)** | Nama kurir untuk `POST /order` — 8 nilai resmi (`JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`) + `spx` (dikonfirmasi support Mengantar, belum teramati live). *(Ninja discontinued per 1 Sept 2026)*. |
+| **courier key (estimasi)** | Key map respon `estimate?courier=all`, casing berbeda dari nama shipment (`JNE`, `JNECargo`, `SiCepat`, `SiCepatCargo`, `SAP`, `SAPLite`, `SapCargo`, `iDexpress`, `iDexpressCargo`, `JT`, `lion`, `anteraja`, `spx`, `pos` — live 2026-09-25). Pemetaan: [02](02-couriers-and-rules.md) §1.1. |
 | **cnote_no** | Nomor resi / consignment note. Field utama tracking dari response create/track. |
 | **ORDER_ID** | ID order internal Mengantar (per shipment). Dipakai untuk polling tracking. |
 | **STT Number** | Surat Tanda Terima — referensi dokumen pengiriman (muncul di data export). |
@@ -35,10 +36,11 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 
 | Field | Wajib | Catatan |
 |-------|:-----:|---------|
-| `courier` | ✅ | Nama shipment resmi (8 nilai). |
+| `courier` | ✅ | Nama shipment resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`; `spx` **[verifikasi]**. *(Ninja discontinued)*. |
 | `pickup` | ✅ | Objek; minimal `type` + `address_id`. |
 | `orders` | ✅ | Array, ≥ 1 item. |
-| `assignee` | ⬜ | Hanya dikirim bila terisi. |
+| `assignee` | ⬜ | Hanya dikirim bila terisi (dari `GET /my-users`). |
+| `dropshipper_id` | ⬜ | ID profil dropshipper dari `GET /dropshippers` bila kirim atas nama orang lain. |
 
 ### `pickup`
 
@@ -68,8 +70,8 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 
 | Konsep | Nilai sah |
 |--------|-----------|
-| Courier (shipment) | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `Ninja`, `lion`, `anteraja` |
-| Courier (estimate) param | idem + `all` (**default `JNE`** bila tidak diisi) |
+| Courier (shipment) | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` **[verifikasi]** *(Ninja discontinued per 1 Sept 2026)* |
+| Courier (estimate) param | Nama shipment persis (case-sensitive) **tanpa** `spx` (→ `400 Invalid courier`), plus `all` (**default `JNE`** bila tidak diisi) |
 | Pickup type | `scheduledPickup`, `dropOff` |
 | Volume | `volumeMotor`, `volumeMobil`, `volumeTruck` |
 | Pickup `time` (slot) | `9:00`, `10:00`, `11:00`, `12:00`, `13:00`, `14:00`, `15:00`, `16:00`, `17:00`, `18:00` |
@@ -83,7 +85,10 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | `category` (list order) | `collected_customer`, `yet_to_collect`, `need_attention`, `rts`, `pending_pickup`, `redelivery`, `undelivered`, `delivery_problem`, `over_sla`, `already_been_undelivered`, `been_undelivered_wo_ticket`, `been_undelivered_wo_proof` |
 | `ticketFilter` (list order) | `withticket`, `without`, `open`, `replied` |
 | `receiverFilter` (list order) | `1`–`10` |
-| Error code (resmi) | `X000` (param hilang), `X001` (key invalid), `X002` (key salah domain), `X003` (token invalid), `409` (konkurensi batch) |
+| Label Generation Status | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED` |
+| Label Generation Format | `A6` (thermal), `A4` (standar) |
+| Label Generation Type | `single`, `multiple` |
+| Error code (resmi) | `X000` (param hilang), `X001` (key invalid), `X002` (key salah domain), `X003` (token invalid), `409` (konkurensi batch JT/SiCepat), `429` (rate limit cetak label) |
 
 ## 4. Opsi konfigurasi (dari konstanta plugin)
 

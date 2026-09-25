@@ -39,7 +39,7 @@ Urutan saat customer mengisi checkout:
 4. **Estimasi ongkir.** Untuk tiap paket: `check_shipping_fee({origin_id, destination_id, courier, weight, COD_AMOUNT})`.
    - `courier=all` + opsi 3PL → endpoint `/api/order/allEstimate3PL`, selain itu `/order/estimate`.
    - `COD_AMOUNT` (docs resmi; huruf besar) hanya dikirim bila metode bayar COD.
-5. **Filter & tampilkan rate.** Buang kurir `unsupported`, `price<=0`, di luar whitelist,
+5. **Filter & tampilkan rate.** Buang kurir `unsupported` (atau `unsupportedOriginSpx` untuk `spx`), `price<=0`, di luar whitelist,
    atau melanggar batas berat/COD. Pakai `estimatedSpecialPrice ?? price`. Tambah fee COD bila perlu.
 6. **Simpan meta** ke shipping line (origin_id, destination_id, kelurahan, kecamatan, package_items)
    agar siap dipakai membuat shipment.
@@ -61,7 +61,7 @@ Pembuatan shipment **tidak terjadi saat checkout**, melainkan saat order berubah
    - **Group** item menjadi shipment berdasar `courier|pickup_type|origin|time_id`, dedup item identik.
    - Tentukan `pickup` (type, address_id, time_id, volume). Bila `scheduledPickup` butuh `time_id`:
      pilih jadwal yang ada (`/time`), atau auto-buat (`POST /time`), atau tandai `pending_pickup_time`.
-   - Panggil `POST /order` per group. `courier` dipetakan ke nama shipment resmi.
+   - Panggil `POST /order` per group. `courier` dipetakan dari key estimasi ke nama shipment resmi ([02](02-couriers-and-rules.md) §1.1).
 4. **Simpan hasil.** Dari response (`data[]`): ambil `ORDER_ID`, `cnote_no`, `status`, `isPaid`,
    `error`, serta `batch`/`batch_id` tingkat item dan envelope. Jangan buang `errors[]` tingkat atas
    karena satu batch bisa berhasil parsial.
@@ -99,6 +99,41 @@ Saat shipment dibuat tapi `cnote_no` belum tersedia (mis. pembayaran belum lunas
 
 > Pola yang bisa ditiru: state `pending_tracking`, job berkala dengan backoff & batas percobaan,
 > idempoten (aman dijalankan berulang).
+
+## 5b. Alur E — Real-Time Tracking via Webhook (Event-Driven)
+
+Mengantar kini mendukung pengiriman webhook langsung ke server aplikasi saat status pengiriman berubah, mengeliminasi kebutuhan polling intensif:
+
+```
+┌─────────────────┐       POST /webhook (HMAC-SHA256)       ┌────────────────────────┐
+│  Mengantar API  │ ──────────────────────────────────────> │  App Webhook Handler   │
+│                 │ <────────────────────────────────────── │  (Next.js / Astro /    │
+└─────────────────┘             HTTP 200 OK                 │   PHP / Express)       │
+                                                            └───────────┬────────────┘
+                                                                        │ verify signature
+                                                                        │ update database
+                                                                        ▼
+                                                            ┌────────────────────────┐
+                                                            │   Database Shipments   │
+                                                            │ (DELIVERED, RTS, etc.) │
+                                                            └────────────────────────┘
+```
+
+1. **Setup:** Integrator memasang Webhook URL di *Dashboard Mengantar → Integrasi Public API* dan mendapatkan `Webhook Secret`.
+2. **Event Delivery:** Server Mengantar mem-push event HTTP POST JSON dengan header `x-timestamp` dan `x-signature`.
+3. **Verifikasi Signature:** Server Anda membaca *raw request body*, menghitung HMAC-SHA256 dari `{x-timestamp}.{raw_body}`, dan melakukan *constant-time comparison* dengan `x-signature`.
+4. **Respon Cepat:** Kembalikan status HTTP `200 OK` dalam tempo kurang dari 5 detik.
+5. **Fallback:** Polling `GET /order` tetap dipertahankan sebagai mekanisme rekonsiliasi jika terjadi pause webhook atau failover jaringan.
+
+## 5c. Alur F — Cetak Label PDF Asynchronous (BETA)
+
+Untuk pencetakan label massal / thermal tanpa membebani thread sinkron:
+
+1. Integrator mengirim `POST /label-generation` dengan 1 `orderId`, `courier`, dan `format`.
+2. API mengembalikan HTTP 202 dengan `labelGenerationId` dan status `PENDING`.
+3. Worker background Mengantar merender PDF dan mengunggah ke cloud storage.
+4. Integrator melakukan polling read-only ke `GET /label-generation/{id}` sampai status menjadi `COMPLETED`.
+5. Ambil `downloadUrl` (signed URL berdurasi 15 menit) dan simpan / cetak file PDF label.
 
 ## 6. Endpoint internal (AJAX) — peta orkestrasi
 

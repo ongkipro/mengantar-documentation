@@ -2,7 +2,73 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu ke spec (`spec/openapi.yaml`).
 
-## [Unreleased]
+## [0.3.1] — 2026-09-25
+
+Koreksi status SPX berdasarkan pemanggilan **read-only** ke produksi (2026-09-25, tanpa order dibuat) + konfirmasi support Mengantar.
+
+### Changed
+- **SPX (Shopee Express) tidak lagi ditandai unsupported.** `GET /order/estimate?courier=all` (dengan/tanpa `COD_AMOUNT`)
+  mengembalikan key `spx` (contoh Jakarta → Jakarta Selatan: `price` 13700, `"1 - 3 days"`, COD didukung; rute Jayapura: 34000).
+- Nama shipment `spx` untuk `POST /order` ditambahkan dengan tanda **dikonfirmasi support Mengantar, belum ada di docs resmi,
+  belum teramati di create-order live** — `docs/01`, `docs/02` §1.2, `docs/07`, `spec` (`CreateOrderRequest.courier`), client (`Courier`).
+- Tabel pemetaan kurir `docs/02` §1.1 memakai **casing key estimasi yang teramati live**: `JNE`, `JNECargo`, `SiCepat`,
+  `SiCepatCargo`, `SAP`, `SAPLite`, `SapCargo`, `iDexpress`, `iDexpressCargo`, `JT`, `lion`, `anteraja`, `spx`, `pos`
+  (sebelumnya lowercase dari plugin). Key `idlite`/`idl`/`paxel`/`wahana` tidak muncul lagi.
+- Catatan "estimasi akun tanpa ETD" diperbarui: entri `spx` membawa `estimate_delivery` & `estimatedDate`.
+- Klaim changelog 0.3.0 yang tidak didukung docs resmi maupun observasi live dihapus (`lionCargo`, `anterajaCargo`,
+  batas panjang `customerName`/alamat).
+
+### Added
+- Field entri `spx`: `unsupportedOriginSpx` (perlakukan seperti `unsupported`), `unsupportedPickup` (arti belum dipastikan),
+  `pickupSchedule` — di `docs/01` §5.1, `spec` `CourierRate`, dan tipe client. Juga `isDangerousGoodsSupported`,
+  `discountExtra*` (docs resmi) di `CourierRate`, dan `code` di `Envelope`.
+- Error `400 Invalid courier` (estimasi single-courier case-sensitive: `JT`/`Sap` ✅, `SAP`/`sap`/`jt` ❌; semua 16 ejaan SPX ❌)
+  dan `400 COURIER_DISABLED` (Ninja, docs resmi) di `docs/08` §A2 dan `docs/01` §12.
+- Client: `isRateAvailable(rate, cod)`; `EstimateCourier` mengecualikan `spx`; `MengantarError.code` membawa field `code`
+  body (mis. `COURIER_DISABLED`). Dua contract test baru.
+- `docs/10` §0d: temuan live 2026-09-25 + daftar yang masih terbuka untuk SPX.
+
+### Observed (belum disimpulkan)
+- `…/order/allEstimatePublic` dengan parameter yang sama → `404 Not Found` pada akun uji. Belum dipastikan global.
+
+### Fixed
+- Referensi silang basi: `docs/05`/`docs/06` §7.5 → §8, `docs/03` §9.2 → §9 & §11.3, `AGENTS.md` webhook §3 → §11.
+- Footer `docs/01` dikembalikan ke format standar (tautan `../README.md`).
+
+## [0.3.0] — 2026-09-25
+
+Penyelarasan penuh 24 endpoint resmi dari `https://api-public.mengantar.com/docs/` + Webhook Resmi HMAC-SHA256 + Panduan Lengkap Multi-Framework (Astro, Next.js, PHP/Laravel, Node.js/Express/Fastify).
+
+### Added
+- **6 Endpoint Baru:**
+  - `DELETE /address` (Hapus alamat penjemputan).
+  - `PUT /address` (Update alamat penjemputan).
+  - `POST /dropshippers` (Tambah identitas pengirim dropshipper).
+  - `GET /dropshippers` (Pencarian dropshipper berdasarkan nama).
+  - `POST /label-generation` (Request cetak thermal/standard PDF label secara asinkron, HTTP 202, rate limit 8/menit).
+  - `GET /label-generation/{id}` (Polling status async label generation, return signed URL GCS 15 menit saat `COMPLETED`).
+- **Webhook Resmi:**
+  - Spesifikasi payload event status shipment (`DELIVERED`, `RETURNED`, `ON_PROCESS`, dll).
+  - Skema verifikasi signature HMAC-SHA256 via header `x-timestamp` dan `x-signature` terhadap `${timestamp}.${raw_body}`.
+  - Helper `verifyMengantarWebhookSignature()` di `examples/mengantar-client.ts` menggunakan Web Crypto API standar.
+  - Contract test di `examples/mengantar-client.test.ts` memvalidasi test vector resmi Mengantar.
+- **Panduan Framework Baru:**
+  - `docs/13-integration-php.md`: Implementasi PHP Native (`MengantarClient.php`, `webhook.php`) & Laravel Controller.
+  - `docs/14-integration-node-js.md`: Implementasi Node.js Vanilla `fetch`, Express (raw body signature handling), dan Fastify.
+  - Pembaruan `docs/05-integration-astro.md` & `docs/06-integration-nextjs.md` dengan route webhook & payload validation.
+- **Dukungan Kurir Baru & Aturan Bisnis:**
+  - Kurir **POS Indonesia (`pos`)** resmi aktif untuk cek ongkir dan pembuatan order.
+  - Parameter `isDangerousGoods: boolean` di `/order/estimate` & `/order` (JT, SiCepat HALU, iDexpress Regular).
+  - Opsi `orders[].cargo` (docs resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`).
+
+### Changed
+- `spec/openapi.yaml` diperbarui ke versi `0.3.0` mencakup 24 operasi endpoint resmi Mengantar.
+- Client TypeScript (`examples/mengantar-client.ts`) dilengkapi method CRUD Address, Dropshippers, Label Generation, dan Webhook Verification.
+- Aturan konkurensi batch `409 Conflict` diperbarui khusus untuk `JT Premium` dan `SiCepat`.
+
+### Deprecated / Discontinued / Unsupported
+- **Ninja Xpress:** Resmi **Discontinued per 1 September 2026** di seluruh API publik Mengantar.
+- ~~**SPX (Shopee Express):** Dikonfirmasi tidak tersedia di public API Mengantar.~~ **Dikoreksi di 0.3.1** — SPX muncul di estimasi live.
 
 ### Audited (2026-08-07 — Official Contract Alignment)
 - Aligned write endpoints, OpenAPI request bodies, cURL examples, REST-client examples, smoke tooling, and the TypeScript client with the official JSON payload contract.

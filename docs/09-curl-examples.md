@@ -62,7 +62,12 @@ curl -sS -X POST "$MGT_PREFIX/time" \
 # Semua kurir
 curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&courier=all&weight=2" | jq '.data'
 
-# Satu kurir + COD (perhatikan COD_AMOUNT huruf besar)
+# Tarif SPX: HANYA dari courier=all (courier=spx/SPX/... → 400 "Invalid courier").
+# Buang bila unsupported / unsupportedOriginSpx bernilai true.
+curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&courier=all&weight=1&COD_AMOUNT=100000" \
+  | jq '.data.spx | select(. != null) | {price, estimate_delivery, unsupported, unsupported_cod, unsupportedOriginSpx, unsupportedPickup}'
+
+# Satu kurir + COD (perhatikan COD_AMOUNT huruf besar; courier case-sensitive: Sap ✅, SAP ❌)
 curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&courier=JNE&weight=2&COD_AMOUNT=150000" | jq
 
 # Public (flat diskon 20%) — TANPA prefix key
@@ -117,7 +122,7 @@ curl -sS -X POST "$MGT_PREFIX/order" \
 ```
 Resi ada di `.data[0].cnote_no`, status pembayaran di `.data[0].isPaid`, order id di
 `.data[0].ORDER_ID`, dan batch di `.data[0].batch_id`/`.batch_id`.
-> JT Premium / Ninja / SiCepat: **jangan** kirim batch paralel — gabung ke satu request (hindari `409`).
+> JT Premium / SiCepat: **jangan** kirim batch paralel — gabung ke satu request (hindari `409`). *(Ninja discontinued per 1 Sept 2026)*.
 
 ## 11. Bayar order unpaid (saldo kurang saat create)
 ```bash
@@ -157,6 +162,53 @@ curl -sS -X DELETE "$MGT_PREFIX/batch" \
 ## 15. Skor penerima (cek risiko RTS sebelum COD)
 ```bash
 curl -sS "$MGT_PREFIX/getReceiverScoreByNumberUser?search=8123456789" | jq '.data'
+```
+
+## 16. Dropshipper (Tambah & Cari)
+```bash
+# Tambah data profil dropshipper
+curl -sS -X POST "$MGT_PREFIX/dropshippers" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Toko Cantik Official","phone":"081299887766"}' | jq
+
+# Cari profil dropshipper berdasarkan nama
+curl -sS "$MGT_PREFIX/dropshippers?name=Cantik" | jq '.data'
+```
+
+## 17. Cetak Label PDF Asinkron (BETA)
+```bash
+# Request async label generation (format A6 thermal / A4, single / multiple)
+curl -sS -X POST "$MGT_PREFIX/label-generation" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "courier":"JNE",
+    "orderIds":["ORDER_OBJECT_ID_1","ORDER_OBJECT_ID_2"],
+    "format":"A6",
+    "type":"multiple"
+  }' | jq
+# Response: HTTP 202 {"success":true,"message":"Label generation has been requested","data":{"id":"LABEL_GEN_ID","status":"PENDING"}}
+
+# Cek status & ambil link unduh PDF (Google Cloud Storage signed URL 15 menit)
+curl -sS "$MGT_PREFIX/label-generation/LABEL_GEN_ID" | jq
+```
+
+## 18. Update & Hapus Alamat Pickup
+```bash
+# Update alamat pickup
+curl -sS -X PUT "$MGT_PREFIX/address" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "_id":"PICKUP_ADDRESS_ID",
+    "PICKUP_NAME":"Gudang Pusat Update",
+    "PICKUP_ADDRESS":"Jl. Baru No. 88, Jakarta Barat",
+    "PICKUP_PIC":"Bambang",
+    "PICKUP_PIC_PHONE":"081299990000"
+  }' | jq
+
+# Hapus alamat pickup
+curl -sS -X DELETE "$MGT_PREFIX/address" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"PICKUP_ADDRESS_ID"}' | jq
 ```
 
 ---

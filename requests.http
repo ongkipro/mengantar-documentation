@@ -1,4 +1,4 @@
-### Mengantar API — REST client file
+### Mengantar API — REST client file (Lengkap 24 Endpoint)
 # Kompatibel dengan VS Code REST Client, JetBrains HTTP Client, dan editor sejenis.
 # Isi variabel di bawah (atau pakai file env editor-mu). @key RAHASIA — jangan commit nilai asli.
 # Endpoint TULIS ditandai [WRITE] — jalankan hanya di sandbox.
@@ -13,6 +13,8 @@
 @destId = DESTINATION_WILAYAH_ID
 @timeId = TIME_ID
 @batchId = BATCH_ID
+@dropshipperId = DROPSHIPPER_ID
+@labelGenId = LABEL_GENERATION_ID
 
 ### 1. Validasi key (estimate dummy)
 GET {{prefix}}/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destination_id=5fc62de8f8f44b34aa4bdc58&courier=all&weight=1
@@ -23,7 +25,7 @@ GET {{prefix}}/address/search?keyword=menteng
 ### 3. List alamat pickup (origin) → ambil data[]._id sebagai pickupAddressId, data[].PICKUP_AUTOFILL sebagai originWilayahId
 GET {{prefix}}/address
 
-### 4. [WRITE] Buat / update alamat pickup
+### 4. [WRITE] Buat / in-place update alamat pickup (mendukung pinpointData)
 POST {{prefix}}/address
 Content-Type: application/json
 
@@ -32,44 +34,76 @@ Content-Type: application/json
   "PICKUP_ADDRESS": "Jl. Contoh No. 1",
   "PICKUP_PIC_PHONE": "08123456789",
   "PICKUP_PIC": "Budi",
-  "PICKUP_NAME": "Gudang Utama"
+  "PICKUP_NAME": "Gudang Utama",
+  "pinpointData": { "lat": -6.175392, "lng": 106.827153 }
 }
 
-### 5. List jadwal pickup
+### 5. [WRITE] Update alamat pickup by ID
+PUT {{prefix}}/address/{{pickupAddressId}}
+Content-Type: application/json
+
+{
+  "PICKUP_NAME": "Gudang Utama Updated",
+  "PICKUP_PIC": "Budi Santoso",
+  "PICKUP_PIC_PHONE": "08123456789"
+}
+
+### 6. [WRITE] Hapus alamat pickup
+DELETE {{prefix}}/address
+Content-Type: application/json
+
+{
+  "id": "{{pickupAddressId}}"
+}
+
+### 7. List jadwal pickup
 GET {{prefix}}/time?address={{pickupAddressId}}
 
-### 6. [WRITE] Tambah jadwal pickup — date = mm-dd-yyyy, time = 9:00..18:00
+### 8. [WRITE] Tambah jadwal pickup — date = mm-dd-yyyy, time = 9:00..18:00
 POST {{prefix}}/time
 Content-Type: application/json
 
-{ "address_id": "{{pickupAddressId}}", "date": "07-10-2026", "time": "13:00" }
+{ "address_id": "{{pickupAddressId}}", "date": "11-27-2026", "time": "13:00" }
 
-### 7. Estimasi ongkir (semua kurir)
+### 9. Estimasi ongkir akun (semua kurir) — key map beda casing dari nama shipment (SAP→Sap, JNECargo→JNE, spx).
+# SPX hanya muncul di sini: courier=spx/SPX/... → 400 "Invalid courier". unsupportedOriginSpx:true = tidak tersedia.
 GET {{prefix}}/order/estimate?origin_id={{originWilayahId}}&destination_id={{destId}}&courier=all&weight=2
 
-### 8. Estimasi + COD (COD_AMOUNT huruf besar)
-GET {{prefix}}/order/estimate?origin_id={{originWilayahId}}&destination_id={{destId}}&courier=JNE&weight=2&COD_AMOUNT=150000
+### 10. Estimasi + COD + Dangerous Goods (courier case-sensitive: Sap ✅, SAP ❌)
+GET {{prefix}}/order/estimate?origin_id={{originWilayahId}}&destination_id={{destId}}&courier=JNE&weight=2&COD_AMOUNT=150000&isDangerousGoods=true
 
-### 9. Estimasi public (flat 20%) — TANPA prefix key
-GET {{base}}/api/order/allEstimatePublic?origin_id={{originWilayahId}}&destination_id={{destId}}&weight=2
+### 11. Estimasi public (flat 20%) — TANPA prefix key
+GET {{base}}/api/order/allEstimatePublic?origin_id={{originWilayahId}}&destination_id={{destId}}&weight=2&isDangerousGoods=false
 
-### 10. Estimasi 3PL (harga standar) — TANPA prefix key
-GET {{base}}/api/order/allEstimate3PL?origin_id={{originWilayahId}}&destination_id={{destId}}&weight=2
+### 12. Estimasi 3PL (harga standar) — TANPA prefix key
+GET {{base}}/api/order/allEstimate3PL?origin_id={{originWilayahId}}&destination_id={{destId}}&weight=2&isDangerousGoods=false
 
-### 11. Skor performa kurir (kirim allEstimateData dari #7)
+### 13. Skor performa kurir (kirim allEstimateData dari #9)
 POST {{prefix}}/order/getPerformancePublic
 Content-Type: application/json
 Accept: application/json
 
 { "city": "JAKARTA PUSAT", "allEstimateData": {} }
 
-### 12. Invoice & saldo
-GET {{prefix}}/invoices
+### 14. Invoice & saldo (bisa filter keyword no. resi/order/invoice)
+GET {{prefix}}/invoices?page=1&size=20&keyword=ORD-12345
 
-### 13. Assignee (untuk orders.assignee)
+### 15. Assignee (untuk orders.assignee)
 GET {{prefix}}/my-users
 
-### 14. [WRITE] Buat shipment — resi di data[].cnote_no. JT/Ninja/SiCepat: jangan paralel!
+### 16. [WRITE] Tambah Master Dropshipper (otomatis dedup by nama + no. HP)
+POST {{prefix}}/dropshippers
+Content-Type: application/json
+
+{
+  "name": "Toko Sejahtera Partner",
+  "phone": "081234567890"
+}
+
+### 17. Cari Master Dropshipper
+GET {{prefix}}/dropshippers?search=Toko&page=1&perPage=20
+
+### 18. [WRITE] Buat shipment — resi di data[].cnote_no. JT/SiCepat: jangan paralel! (Ninja discontinued)
 POST {{prefix}}/order
 Content-Type: application/json
 Accept: application/json
@@ -80,37 +114,60 @@ Accept: application/json
   "orders": [{
     "customerAddressDataId": "{{destId}}",
     "customerAddress": "Jl. Tujuan No. 5, Bandung, Jawa Barat 40123",
-    "customerName": "Siti", "customerPhone": "08111111111",
-    "parcelContent": "Kaos katun", "weight": 2, "quantity": 1, "goodsValue": 150000
+    "customerName": "Siti",
+    "customerPhone": "08111111111",
+    "parcelContent": "Kaos katun",
+    "weight": 2,
+    "quantity": 1,
+    "goodsValue": 150000,
+    "isDangerousGoods": false,
+    "dropShipper": {
+      "id": "{{dropshipperId}}",
+      "name": "Toko Sejahtera Partner",
+      "phone": "081234567890"
+    }
   }]
 }
 
-### 15. [WRITE] Bayar order unpaid
+### 19. [WRITE] Bayar order unpaid
 POST {{prefix}}/order/pay-unpaid
 Content-Type: application/json
 
 { "courier": "JNE", "batch_id": "{{batchId}}" }
 
-### 16. Lacak order by order_id
+### 20. Lacak order by order_id
 GET {{prefix}}/order?order_id=ORDER_ID
 
-### 17. List order (filter)
+### 21. List order (filter & pagination)
 GET {{prefix}}/order?page=1&size=50&courier=JNE&cod=NON_COD&category=collected_customer
 
-### 18. [WRITE] Hapus order
+### 22. [WRITE] Hapus order
 DELETE {{prefix}}/order
 Content-Type: application/json
 
 { "courier": "JNE", "ids": ["ORDER_OBJECT_ID"] }
 
-### 19. List batch
+### 23. List batch
 GET {{prefix}}/batch?page=1&size=50&courier=JNE
 
-### 20. [WRITE] Hapus batch
+### 24. [WRITE] Hapus batch
 DELETE {{prefix}}/batch
 Content-Type: application/json
 
 { "courier": "JNE", "id": "{{batchId}}" }
 
-### 21. Skor penerima (cek risiko RTS sebelum COD)
+### 25. Skor penerima (cek risiko RTS sebelum COD)
 GET {{prefix}}/getReceiverScoreByNumberUser?search=8123456789
+
+### 26. [WRITE] Request Cetak Label Asinkron PDF (BETA — Whitelist, max 8 print/menit)
+POST {{prefix}}/label-generation
+Content-Type: application/json
+
+{
+  "orderId": "ORDER_ID_PAID",
+  "courier": "JNE",
+  "format": "thermal-10x15"
+}
+
+### 27. Cek Status Cetak Label PDF (Read-only)
+GET {{prefix}}/label-generation/{{labelGenId}}

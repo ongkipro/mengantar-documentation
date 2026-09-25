@@ -8,17 +8,22 @@ Hal-hal yang harus dikonfirmasi dengan akun/sandbox. Jalankan cURL di
 
 ## 0. Sudah dikonfirmasi via docs resmi ✅
 
-Dicocokkan dengan `app.mengantar.com/docs` — **tidak perlu** diverifikasi ulang (kecuali ingin cek nilai nyata):
+Dicocokkan dengan `https://api-public.mengantar.com/docs/` — **tidak perlu** diverifikasi ulang (kecuali ingin cek nilai nyata):
 
-- ✅ Daftar endpoint (18) + method + parameter — lihat [01](01-api-reference.md) §2.
-- ✅ Kode error resmi: `X000`, `X001`, `X002`, `X003` + `409 Conflict` (konkurensi batch).
+- ✅ Daftar endpoint (24) + method + parameter — lihat [01](01-api-reference.md) §2.
+- ✅ Kode error resmi: `X000`, `X001`, `X002`, `X003`, `409 Conflict` (konkurensi batch JT/SiCepat), `429 Too Many Requests`.
 - ✅ `POST /time`: `date` = **`mm-dd-yyyy`**, `time` = slot `9:00`–`18:00`.
 - ✅ `courier` param estimate default = `JNE`; nilai `all` → map per kurir.
 - ✅ `COD_AMOUNT` (huruf besar) = Nilai Barang + Ongkir; matriks `unsupported`/`unsupported_cod`.
 - ✅ `customProducts` hanya JNE/SiCepat/Sap/JNT; aturan Σweight & Σqty.
 - ✅ Saldo kurang → order unpaid → `POST /order/pay-unpaid`.
+- ✅ Webhook resmi didukung penuh: verifikasi signature HMAC-SHA256 (`x-timestamp`, `x-signature`) over `${timestamp}.${raw_body}`.
+- ✅ Ninja Xpress discontinued per 1 September 2026 (`courier=Ninja` → `400 COURIER_DISABLED`); POS Indonesia aktif.
+  SPX **tidak** disebut di docs resmi — lihat temuan live §0d.
+- ✅ Modul Dropshipper (`POST /dropshippers`, `GET /dropshippers`) & Update/Delete Pickup Address.
+- ✅ Async Label Generation (`POST /label-generation`, `GET /label-generation/{id}`) dengan rate-limit 8/menit.
 
-**Masih perlu akun asli:** rate limit, webhook, stabilitas `destination_id` lintas waktu, perilaku create-order nyata.
+**Masih perlu akun asli:** stabilitas `destination_id` lintas waktu, perilaku create-order nyata di akun sandbox Anda.
 
 ## 0b. Diverifikasi LIVE ✅ (2026-07-03, akun produksi read-only)
 
@@ -29,7 +34,7 @@ Smoke-test `make smoke` dengan key `API-…` nyata:
 - ✅ **`estimate.origin_id`/`destination_id` = `_id` WILAYAH** (dari `/address/search`), **bukan** `_id` alamat
   pickup. Memakai pickup `_id` → `success:false`. Origin asal = `PICKUP_AUTOFILL` alamat pickup.
 - ✅ `estimate?courier=all` mengembalikan **~14–15 key kurir** (JNE, JNECargo, JT, Ninja, SAP, SAPLite,
-  SapCargo, SiCepat, SiCepatCargo, anteraja, iDexpress, iDexpressCargo, lion, paxel, pos).
+  SapCargo, SiCepat, SiCepatCargo, anteraja, iDexpress, iDexpressCargo, lion, paxel, pos). *(Set per 2026-09-25: lihat §0d.)*
 - ✅ `/address/search`, `/address`, `/invoices` (ada `count` & `balance`), `/my-users` (`_id,name,email,…`),
   `/batch`, `/order` (list) — semua `success:true`. Order record punya `FULL_RECEIVER_ADDRESS`.
 - ✅ `/time?address=<pickup _id>` `success:true` (pakai `_id` objek alamat pickup, bukan wilayah).
@@ -48,11 +53,35 @@ Dikonfirmasi ulang langsung terhadap API produksi saat membangun integrasi live:
   `iDexpress.estimatedPrice` ≈ 10000, `JNE.estimatedPrice` 12000.
 - ✅ **Tidak ada field ETD/durasi** di response `/order/estimate` — hanya harga; label estimasi waktu antar
   harus disediakan konsumen. (`estimatedDate`/`estimate_delivery` hanya ada di `/allEstimate*`.)
+  *(Diperbarui 2026-09-25: entri `spx` membawa `estimate_delivery` & `estimatedDate` — lihat §0d.)*
 - ✅ `estimatedSpecialPrice` = harga diskon (berbasis volume akun); `estimatedPrice` = harga standar/akhir.
 - ✅ `GET /address/search` record memuat `_id`, `COUNTRY_NAME`, `PROVINCE_NAME`, `CITY_NAME`,
   `DISTRICT_NAME`, `SUBDISTRICT_NAME`, `ZIP_CODE`, `DESTINATION_CODE`.
 - ✅ Aturan dua "origin" ID di-affirm ulang: `estimate.origin_id`/`destination_id` = `_id` WILAYAH dari
   `/address/search`, **bukan** `_id` objek alamat pickup.
+
+## 0d. Re-verifikasi LIVE ✅ (2026-09-25, produksi, read-only — tanpa order dibuat)
+
+- ✅ `GET /order/estimate?courier=all&weight=1` (dengan & tanpa `COD_AMOUNT=100000`) mengembalikan key:
+  `JNE`, `JNECargo`, `SiCepat`, `SiCepatCargo`, `SAP`, `SAPLite`, `SapCargo`, `iDexpress`, `JT`, `lion`,
+  `iDexpressCargo`, `anteraja`, **`spx`**, `pos`. Tidak ada key Ninja (konsisten dengan discontinued 1 Sept 2026);
+  `paxel` juga tidak muncul.
+- ✅ Entri **`spx`** (Jakarta → Jakarta Selatan): `price` 13700, `estimate_delivery` `"1 - 3 days"`, `estimatedDate`
+  `"2-4 hari"`, `codFee` 3329, `unsupported_cod:false`, plus field baru `unsupportedOriginSpx`, `unsupportedPickup`,
+  `pickupSchedule`. Rute jauh (area Jayapura): `price` 34000, `"3 - 4 days"`, COD didukung. Contoh JSON: [01](01-api-reference.md) §5.1.
+- ✅ Estimasi single-courier **case-sensitive** terhadap nama shipment: `JT`, `Sap` → 200; `SAP`, `sap`, `jt` →
+  `400 {"success":false,"message":"Invalid courier"}`. Semua 16 ejaan SPX yang dicoba → `400 Invalid courier`
+  (daftar: [02](02-couriers-and-rules.md) §1.2).
+- ⚠️ `…/order/allEstimatePublic` dengan parameter yang sama → `404 {"success":false,"message":"Not Found"}` pada akun
+  ini. Belum dipastikan global.
+- ℹ️ Support Mengantar mengonfirmasi `POST /order` dengan `courier: "spx"` didukung — **belum teramati**.
+
+**Masih terbuka (SPX):**
+- [ ] `POST /order` dengan `courier: "spx"` — respon nyata, `cnote_no`, status awal.
+- [ ] Arti `unsupportedPickup` dan hubungan `pickupSchedule` dengan `pickup.time_id` / `POST /time`.
+- [ ] Batas COD SPX, dukungan `cargo`, `isDangerousGoods`, `customProducts`, dan cetak label untuk SPX.
+- [ ] Nilai `courier` SPX di tracking/webhook/list order (`spx`?).
+- [ ] Path `allEstimatePublic` yang dipakai saat `404` — ulangi dengan path resmi tanpa key (`/api/order/allEstimatePublic`).
 
 ## 1. Kredensial & lingkungan
 - [ ] Dapatkan **API key produksi**.
@@ -106,9 +135,9 @@ Hasil:
 ```
 
 ## 5. Webhook vs polling
-- [ ] Konfirmasi apakah Mengantar menyediakan **webhook/callback** status (plugin hanya polling → kemungkinan tidak ada).
-- [ ] Jika ada: endpoint daftar webhook, format payload, verifikasi signature.
-- [ ] Jika tidak ada: pastikan strategi polling (`/order?order_id=`) + backoff sudah memadai.
+- [x] Mengantar menyediakan **webhook** status (docs resmi) — HMAC-SHA256, lihat [01](01-api-reference.md) §11.
+- [ ] Terima satu event webhook nyata di produksi dan cocokkan payload dengan [03](03-data-model.md).
+- [ ] Pastikan polling (`/order?order_id=`) + backoff tetap memadai sebagai fallback/rekonsiliasi.
 
 ```
 Hasil:

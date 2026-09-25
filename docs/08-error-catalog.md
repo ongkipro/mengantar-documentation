@@ -17,9 +17,17 @@ Docs resmi mendefinisikan kode berikut (biasanya di body `message`/`errors` saat
 | `X001` | `secret_key` tidak dikenal / tidak valid / **kadaluarsa** | Fatal config — stop, minta perbarui API key. |
 | `X002` | `secret_key` tidak valid untuk **domain** ini | Pakai key Developer/Universal (bebas domain) atau daftarkan domain. |
 | `X003` | User `token` tidak dikenal / tidak valid / kadaluarsa | Refresh/perbaiki user token. |
-| `409 Conflict` | Konkurensi batch **JT Premium / Ninja / SiCepat** — ada proses batch berjalan | Jangan kirim batch paralel; gabungkan ke 1 batch, atau antre & retry setelah batch sebelumnya selesai. |
+| `409 Conflict` | Konkurensi batch **JT Premium / SiCepat** — ada proses batch berjalan | Jangan kirim batch paralel; gabungkan ke 1 batch, atau antre & retry setelah batch sebelumnya selesai. *(Ninja discontinued)* |
+| `429 Too Many Requests` | Rate limit async label generation terlampaui (maks 8 aksi per menit) | Terapkan queue/rate-limiter di aplikasi klien, tunggu 60 detik sebelum request cetak berikutnya. |
 
-> `409` bukan kode `X*` — ia HTTP status dengan `success:false` + `message` (lihat [01](01-api-reference.md) §7.6).
+### A2. Error validasi kurir (HTTP `400`)
+
+| Respon | Kapan | Penanganan |
+|--------|-------|------------|
+| `400 {"success":false,"message":"Courier is not available","code":"COURIER_DISABLED"}` | `courier=Ninja` di estimasi (Ninja discontinued 1 Sept 2026) — docs resmi | Hapus kurir dari opsi; jangan retry. |
+| `400 {"success":false,"message":"Invalid courier"}` | `courier=<nama>` di estimasi tidak cocok **persis** dengan nama shipment (`SAP`, `sap`, `jt` ditolak; `Sap`, `JT` diterima) dan **semua ejaan SPX** — teramati live 2026-09-25 | Pakai nama shipment persis ([02](02-couriers-and-rules.md) §1); ambil tarif SPX dari `courier=all`. Jangan retry. |
+
+> `409` dan `429` bukan kode `X*` — keduanya HTTP status dengan `success:false` + `message` (lihat [01](01-api-reference.md)).
 
 ## B. Error dari API Mengantar (perilaku, via plugin)
 
@@ -76,11 +84,13 @@ Plugin memblokir create shipment bila salah satu gagal — replikasikan validasi
 1. Network/timeout/5xx/JSON-invalid   → retry dengan backoff (idempoten via order_id).
 2. success:false + X001/X002/X003     → fatal config error (key/domain/token), stop, alert admin.
 3. success:false + X000               → parameter wajib hilang; perbaiki payload, jangan retry buta.
-4. 409 Conflict (JT/Ninja/SiCepat)    → antre; jangan kirim batch paralel, gabung ke 1 batch lalu retry.
-5. success:false + pickup time error  → state "pending_pickup_time", jangan retry buta.
-6. Validasi pra-kirim gagal           → tolak di UI/sebelum API, tampilkan pesan spesifik.
-7. created, cnote_no kosong, isPaid bukan false → state "pending_tracking", poll /order?order_id= (backoff).
-8. created dengan isPaid=false              → top-up lalu /order/pay-unpaid; jangan create ulang.
+3b. 400 Invalid courier / COURIER_DISABLED → nilai courier salah/nonaktif; perbaiki mapping, jangan retry.
+4. 409 Conflict (JT/SiCepat)          → antre; jangan kirim batch paralel, gabung ke 1 batch lalu retry (Ninja discontinued).
+5. 429 Too Many Requests (Label Gen)  → kurangi kecepatan polling / request pembuatan label (maks 8 aksi/menit).
+6. success:false + pickup time error  → state "pending_pickup_time", jangan retry buta.
+7. Validasi pra-kirim gagal           → tolak di UI/sebelum API, tampilkan pesan spesifik.
+8. created, cnote_no kosong, isPaid bukan false → state "pending_tracking", poll /order?order_id= (backoff).
+9. created dengan isPaid=false        → top-up lalu /order/pay-unpaid; jangan create ulang.
 ```
 
 Selalu simpan `message` + `errors` mentah untuk audit, tapi **redaksi API key** dari log.
