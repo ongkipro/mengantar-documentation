@@ -114,6 +114,39 @@ Untuk paket berukuran besar / grosir:
 > - `unsupported_cod: true` → Kurir dapat mengantar, tetapi **COD dilarang** di wilayah/layanan tersebut.
 > - `unsupportedOriginSpx: true` (hanya entri `spx`) → origin tidak dilayani SPX; perlakukan seperti `unsupported: true`.
 
+### 3.3 Kelayakan COD Pos Indonesia (per akun)
+
+Docs resmi: COD `pos` hanya tersedia bila **delivered rate akun ≥ 82%**. Rate dihitung dari order **semua kurir**
+yang dibuat dalam jendela bergulir **21–60 hari**. Non-COD `pos` **tidak** terpengaruh.
+
+Kelayakan ini dicek saat `POST /order` COD dengan `courier: "pos"`, bukan dari flag estimasi — `unsupported_cod:false`
+di estimasi **tidak** menjamin order COD POS diterima.
+
+| `status` | HTTP | COD POS | `deliveredRate` berisi |
+|----------|------|---------|------------------------|
+| `eligible` | 200 | ✅ Tersedia | — (periode terakhir ≥ 82%) |
+| `warning` | 200 | ✅ Masih tersedia | Rate aktual (periode terakhir < 82%, tapi tidak ketiga periode terakhir) |
+| `new_seller` | **403** | ❌ Diblokir | `0` — akun belum punya riwayat kirim |
+| `insufficient` | **403** | ❌ Diblokir | Rate keseluruhan akun — data belum cukup (belum ada periode, periode < 21 hari, atau kosong); bukan masalah performa |
+| `blocked` | **403** | ❌ Diblokir | Rate aktual — **tiga periode evaluasi terakhir** semuanya < 82% |
+
+Contoh body 403 (docs resmi):
+
+```json
+{ "success": false, "message": "Pos Indonesia COD is not available for this account",
+  "status": "blocked", "deliveredRate": 70, "minimumDeliveredRate": 82 }
+```
+
+Ketiga status 403 memakai `message` yang sama — bedakan lewat field `status`.
+
+> ⚠️ Docs resmi menjelaskan ambang blokir dengan dua kalimat berbeda: di bagian estimasi "masa tenggang tiga hari
+> sebelum COD POS diblokir", di bagian kurir "diblokir setelah tiga periode evaluasi terakhir di bawah ambang".
+> Tabel di atas mengikuti versi status yang lebih rinci. **[verifikasi]** mana yang berlaku.
+
+Penanganan di aplikasi: tangkap 403 dengan `status` di atas → sembunyikan COD untuk `pos` (atau tawarkan non-COD/kurir
+lain), tampilkan `deliveredRate` vs `minimumDeliveredRate` ke operator, dan **jangan retry** — status baru berubah setelah
+periode evaluasi berikutnya. POS juga butuh `pinpointData.lat`/`lng` valid pada alamat pickup untuk pickup terjadwal.
+
 ---
 
 ## 4. Konkurensi Batch (JT Premium & SiCepat)

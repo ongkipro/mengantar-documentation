@@ -27,6 +27,12 @@ Docs resmi mendefinisikan kode berikut (biasanya di body `message`/`errors` saat
 | `400 {"success":false,"message":"Courier is not available","code":"COURIER_DISABLED"}` | `courier=Ninja` di estimasi (Ninja discontinued 1 Sept 2026) — docs resmi | Hapus kurir dari opsi; jangan retry. |
 | `400 {"success":false,"message":"Invalid courier"}` | `courier=<nama>` di estimasi tidak cocok **persis** dengan nama shipment (`SAP`, `sap`, `jt` ditolak; `Sap`, `JT` diterima) dan **semua ejaan SPX** — teramati live 2026-09-25 | Pakai nama shipment persis ([02](02-couriers-and-rules.md) §1); ambil tarif SPX dari `courier=all`. Jangan retry. |
 
+### A3. COD Pos Indonesia tidak tersedia untuk akun (HTTP `403`)
+
+| Respon | Kapan | Penanganan |
+|--------|-------|------------|
+| `403 {"success":false,"message":"Pos Indonesia COD is not available for this account","status":"new_seller\|insufficient\|blocked","deliveredRate":N,"minimumDeliveredRate":82}` | `POST /order` COD dengan `courier:"pos"` saat delivered rate akun di bawah ambang — docs resmi | Bedakan lewat `status`; tawarkan non-COD atau kurir lain; jangan retry. Detail di [02](02-couriers-and-rules.md) §3.3. |
+
 > `409` dan `429` bukan kode `X*` — keduanya HTTP status dengan `success:false` + `message` (lihat [01](01-api-reference.md)).
 
 ## B. Error dari API Mengantar (perilaku, via plugin)

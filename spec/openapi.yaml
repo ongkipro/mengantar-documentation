@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Mengantar Public API
-  version: 0.3.1
+  version: 0.3.2
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
@@ -424,6 +424,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Envelope' }
+        '403':
+          description: COD Pos Indonesia tidak tersedia untuk akun (delivered rate < 82%) — lihat docs/02 §3.3
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PosCodIneligible' }
         '409':
           description: Konkurensi batch JT Premium / SiCepat — gabungkan ke 1 batch
           content:
@@ -623,6 +628,16 @@ components:
           schema: { $ref: '#/components/schemas/Envelope' }
 
   schemas:
+    PosCodIneligible:
+      type: object
+      description: Body 403 saat COD pos diblokir (docs resmi). Ketiga status memakai message yang sama.
+      properties:
+        success: { type: boolean, enum: [false] }
+        message: { type: string, example: Pos Indonesia COD is not available for this account }
+        status: { type: string, enum: [new_seller, insufficient, blocked] }
+        deliveredRate: { type: number, example: 70 }
+        minimumDeliveredRate: { type: number, example: 82 }
+      required: [success, message, status]
     Envelope:
       type: object
       properties:

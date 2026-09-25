@@ -36,7 +36,7 @@ Dokumen ini menjelaskan cara memelihara, menguji, dan memperluas repo **Menganta
 Urutan prioritas saat ada konflik:
 
 1. Response live/sandbox yang direkam aman di `docs/10-verification-checklist.md`.
-2. Dokumentasi resmi Mengantar (`https://app.mengantar.com/docs/`).
+2. Dokumentasi resmi Mengantar (`https://app.mengantar.com/docs/`; mirror identik di `https://api-public.mengantar.com/docs/`).
 3. `spec/openapi.yaml` untuk kontrak machine-readable.
 4. `docs/01-api-reference.md` untuk penjelasan manusia.
 5. `examples/mengantar-client.ts` untuk implementasi helper typed.

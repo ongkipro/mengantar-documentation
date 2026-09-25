@@ -29,7 +29,7 @@ Tiap klaim di `docs/` ditandai tingkat kepercayaannya — **hormati tanda ini**:
 
 | Tanda | Arti | Boleh diandalkan? |
 |-------|------|-------------------|
-| (default) | Dicocokkan dengan **docs resmi** `app.mengantar.com/docs` | ✅ Ya |
+| (default) | Dicocokkan dengan **docs resmi** `app.mengantar.com/docs` (mirror identik: `api-public.mengantar.com/docs`) | ✅ Ya |
 | **[plugin]** | Berasal dari pembedahan plugin WooCommerce *Woo Mengantar* v1.0.32 | ⚠️ Pola operasional; verifikasi nilai |
 | **[verifikasi]** | Belum dipastikan; perlu akun/sandbox asli | ❌ Jangan diandalkan buta |
 

@@ -2,6 +2,19 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu ke spec (`spec/openapi.yaml`).
 
+## [0.3.2] — 2026-09-25
+
+### Added
+- Kelayakan COD Pos Indonesia per akun (docs resmi): ambang delivered rate 82% atas order semua kurir di jendela
+  21–60 hari; status `eligible`/`warning` (200) dan `new_seller`/`insufficient`/`blocked` (403). Tercatat di
+  [02](docs/02-couriers-and-rules.md) §3.3, [08](docs/08-error-catalog.md) §A3, dan spec (`403` di `createOrder`,
+  schema `PosCodIneligible`). Dua kalimat docs resmi soal ambang blokir saling berbeda — ditandai **[verifikasi]**.
+
+### Changed
+- `app.mengantar.com/docs` dan `api-public.mengantar.com/docs` dicatat sebagai mirror dokumen yang sama
+  (keduanya 200, konten sama per 2026-09-25).
+- `examples/package.json` diselaraskan ke versi spec (0.2.0 → 0.3.2).
+
 ## [0.3.1] — 2026-09-25
 
 Koreksi status SPX berdasarkan pemanggilan **read-only** ke produksi (2026-09-25, tanpa order dibuat) + konfirmasi support Mengantar.
