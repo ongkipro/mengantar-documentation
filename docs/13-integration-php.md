@@ -247,7 +247,7 @@ class MengantarClient
 $client = new MengantarClient(getenv('MENGANTAR_API_KEY'));
 
 $payload = [
-    'courier' => 'JNE', // 'JNE', 'SiCepat', 'Sap', 'iDexpress', 'JT', 'lion', 'anteraja', 'pos' ('spx': dikonfirmasi support, belum teramati live)
+    'courier' => 'JNE', // 'JNE', 'SiCepat', 'Sap', 'iDexpress', 'JT', 'lion', 'anteraja', 'pos' ('spx': ada di docs resmi, create-order belum teramati live)
     'pickup' => [
         'type' => 'scheduledPickup',
         'address_id' => getenv('MENGANTAR_PICKUP_ADDRESS_ID'),

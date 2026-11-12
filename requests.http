@@ -1,4 +1,4 @@
-### Mengantar API — REST client file (Lengkap 24 Endpoint)
+### Mengantar API — REST client file (Lengkap 25 Endpoint)
 # Kompatibel dengan VS Code REST Client, JetBrains HTTP Client, dan editor sejenis.
 # Isi variabel di bawah (atau pakai file env editor-mu). @key RAHASIA — jangan commit nilai asli.
 # Endpoint TULIS ditandai [WRITE] — jalankan hanya di sandbox.
@@ -66,7 +66,7 @@ Content-Type: application/json
 { "address_id": "{{pickupAddressId}}", "date": "11-27-2026", "time": "13:00" }
 
 ### 9. Estimasi ongkir akun (semua kurir) — key map beda casing dari nama shipment (SAP→Sap, JNECargo→JNE, spx).
-# SPX hanya muncul di sini: courier=spx/SPX/... → 400 "Invalid courier". unsupportedOriginSpx:true = tidak tersedia.
+# SPX: ambil dari sini (live 2026-09-25 courier=spx → 400 "Invalid courier"; docs resmi kini mencantumkan spx). unsupportedOriginSpx:true = tidak tersedia.
 GET {{prefix}}/order/estimate?origin_id={{originWilayahId}}&destination_id={{destId}}&courier=all&weight=2
 
 ### 10. Estimasi + COD + Dangerous Goods (courier case-sensitive: Sap ✅, SAP ❌)
@@ -104,9 +104,11 @@ Content-Type: application/json
 GET {{prefix}}/dropshippers?search=Toko&page=1&perPage=20
 
 ### 18. [WRITE] Buat shipment — resi di data[].cnote_no. JT/SiCepat: jangan paralel! (Ninja discontinued)
+# idempotencyKey: kirim nilai & body yang sama persis saat retry (docs/01 §8.1a)
 POST {{prefix}}/order
 Content-Type: application/json
 Accept: application/json
+idempotencyKey: INV-2026-0001
 
 {
   "courier": "JNE",
@@ -171,3 +173,13 @@ Content-Type: application/json
 
 ### 27. Cek Status Cetak Label PDF (Read-only)
 GET {{prefix}}/label-generation/{{labelGenId}}
+
+### 28. [WRITE] (SANDBOX saja) Simulasi status order — produksi 404
+POST {{prefix}}/order/simulation
+Content-Type: application/json
+
+{
+  "courier": "JNE",
+  "orderId": "ORDER_ID",
+  "statusCategory": "DELIVERED"
+}

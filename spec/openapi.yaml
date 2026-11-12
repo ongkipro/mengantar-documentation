@@ -1,23 +1,23 @@
 openapi: 3.1.0
 info:
   title: Mengantar Public API
-  version: 0.3.3
+  version: 0.4.0
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
   description: >-
-    Spesifikasi resmi Mengantar Public API (sinkron per September 2026 dengan https://api-public.mengantar.com/docs/).
-    Mencakup 24 endpoint aktif: Alamat, Jadwal Pickup, Cek Ongkir (termasuk Dangerous Goods), Invoice/Saldo,
-    Dropshipper, Pembuatan & Pelacakan Order, Cetak Label PDF Asynchronous (BETA), serta Callback Webhook resmi (HMAC-SHA256).
-    Per 1 September 2026: Kurir Ninja resmi discontinued. Kurir Pos resmi didukung.
-    SPX (Shopee Express) muncul sebagai key `spx` di /order/estimate?courier=all (live, 2026-09-25) tetapi belum ada di docs resmi;
-    `courier: spx` untuk POST /order dikonfirmasi support Mengantar, belum teramati live.
+    Spesifikasi resmi Mengantar Public API (sinkron per 11 November 2026 dengan https://api-public.mengantar.com/docs/;
+    catatan khusus sandbox hanya tampil di https://sandbox.mengantar.com/docs/).
+    Mencakup 25 endpoint aktif: Alamat, Jadwal Pickup, Cek Ongkir (termasuk Dangerous Goods), Invoice/Saldo,
+    Dropshipper, Pembuatan (dengan header idempotencyKey) & Pelacakan Order, simulasi status order (sandbox saja),
+    Cetak Label PDF Asynchronous (BETA), serta Callback Webhook resmi (HMAC-SHA256).
+    Per 1 September 2026: Kurir Ninja resmi discontinued. Kurir Pos dan SPX (`spx`) tercantum di docs resmi.
     Autentikasi: API key di PATH (`/api/public/{apiKey}`), bukan header.
 servers:
   - url: https://api-public.mengantar.com
     description: "Production (https://api-public.mengantar.com)"
   - url: https://sandbox.mengantar.com
-    description: "Sandbox (https://sandbox.mengantar.com — catatan: Webhook dan beberapa rute kurir sandbox dibatasi)"
+    description: "Sandbox (https://sandbox.mengantar.com — akun, key & Webhook Secret terpisah; batasan kurir sandbox: lihat docs/02)"
 security: []
 
 paths:
@@ -183,17 +183,18 @@ paths:
         - { name: destination_id, in: query, required: true, schema: { type: string } }
         - name: courier
           in: query
-          schema: { type: string, default: JNE, enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, all] }
+          schema: { type: string, default: JNE, enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, spx, all] }
           description: >-
             Kurir yang dipilih, case-sensitive (Sap diterima, SAP/sap → 400 Invalid courier).
-            SPX tidak bisa diminta sendiri (semua ejaan → 400 Invalid courier, teramati 2026-09-25) — ambil dari `all`.
+            Docs resmi (cek 2026-11-11) mencantumkan `spx`, tetapi live 2026-09-25 semua ejaan SPX → 400 Invalid courier;
+            ambil tarif SPX dari `all` sampai dicek ulang.
             Ninja discontinued per 1 Sept 2026 (→ 400 COURIER_DISABLED).
         - { name: weight, in: query, schema: { type: number, default: 1 }, description: kg }
         - { name: COD_AMOUNT, in: query, schema: { type: integer }, description: 'IDR; = Nilai Barang + Ongkir' }
         - name: isDangerousGoods
           in: query
           schema: { type: boolean, default: false }
-          description: Set true / 1 untuk tarif Dangerous Goods (JT, SiCepat, iDexpress)
+          description: "Set true / 1 untuk tarif Dangerous Goods. Estimasi menandai SiCepat, Sap, iDexpress, JT; POST /order hanya konsisten untuk SiCepat (HALU) & iDexpress (docs/02 §2.1)"
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -406,8 +407,18 @@ paths:
     post:
       operationId: createOrder
       summary: Buat shipment (batch)
-      description: Saldo kurang → order tetap sukses dibuat dengan isPaid=false dan cnote_no=null. JT Premium/SiCepat → 1 batch per akun (lihat 409). Ninja discontinued per 1 Sept 2026.
-      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      description: >-
+        Saldo kurang → order tetap sukses dibuat dengan isPaid=false dan cnote_no=null. JT Premium/SiCepat → 1 batch per akun (lihat 409).
+        Ninja discontinued per 1 Sept 2026. Header opsional `idempotencyKey` (1–50 karakter, diingat 24 jam per akun):
+        kirim body yang sama persis pada setiap retry. Replay mengembalikan respons pertama dengan header
+        `Idempotent-Replayed: true` dan field `idempotentReplayed: true`; respons 5xx pertama juga di-replay, tidak dijalankan ulang.
+      parameters:
+        - { $ref: '#/components/parameters/ApiKey' }
+        - name: idempotencyKey
+          in: header
+          required: false
+          description: Referensi milik Anda (mis. nomor invoice), 1–50 karakter; spasi depan/belakang diabaikan.
+          schema: { type: string, minLength: 1, maxLength: 50 }
       requestBody:
         required: true
         content:
@@ -415,12 +426,16 @@ paths:
             schema: { $ref: '#/components/schemas/CreateOrderRequest' }
       responses:
         '200':
-          description: Hasil pembuatan (data = array per order)
+          description: Hasil pembuatan (data = array per order), atau replay idempotency
+          headers:
+            Idempotent-Replayed:
+              description: "`true` bila respons ini salinan request pertama dengan idempotencyKey yang sama"
+              schema: { type: string, enum: ['true'] }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CreateOrderResponse' }
         '400':
-          description: Validasi dropshipper gagal atau parameter order salah
+          description: "Validasi dropshipper gagal, parameter order salah, atau `code: IDEMPOTENCY_KEY_INVALID` (header kosong / > 50 karakter)"
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Envelope' }
@@ -430,7 +445,23 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PosCodIneligible' }
         '409':
-          description: Konkurensi batch JT Premium / SiCepat — gabungkan ke 1 batch
+          description: >-
+            Konkurensi batch JT Premium / SiCepat (gabungkan ke 1 batch), atau `code: IDEMPOTENCY_REQUEST_IN_PROGRESS`
+            (tunggu `Retry-After`, kunci sama) / `IDEMPOTENCY_REQUEST_UNRESOLVED` (cek GET /order, kirim order yang kurang dengan kunci baru).
+          headers:
+            Retry-After:
+              description: Detik tunggu (pada IDEMPOTENCY_REQUEST_IN_PROGRESS)
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '422':
+          description: "`code: IDEMPOTENCY_KEY_REUSED` — kunci sudah dipakai untuk body lain"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '503':
+          description: "`code: IDEMPOTENCY_UNAVAILABLE` — kunci tidak bisa dicek, tidak ada yang dibuat; retry dengan kunci sama"
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Envelope' }
@@ -481,6 +512,45 @@ paths:
         '4XX': { $ref: '#/components/responses/Error' }
         '200': { $ref: '#/components/responses/Envelope' }
 
+  /api/public/{apiKey}/order/simulation:
+    post:
+      operationId: simulateOrderStatus
+      summary: (Sandbox saja) Simulasikan status order
+      description: >-
+        Hanya ada di deployment sandbox; produksi selalu 404. Memindahkan order milik akun ke ON DELIVERY, DELIVERED,
+        atau RTS dan mengirim satu webhook bila Webhook URL terpasang. Butuh permission "Check order status".
+      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [courier]
+              description: Kirim tepat satu dari orderId / trackingId dan tepat satu dari statusCategory / status.
+              allOf:
+                - oneOf:
+                    - { required: [orderId] }
+                    - { required: [trackingId] }
+                - oneOf:
+                    - { required: [statusCategory] }
+                    - { required: [status] }
+              properties:
+                courier: { type: string, enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, spx] }
+                orderId: { type: string, description: "ORDER_ID (kirim tepat satu dari orderId / trackingId)" }
+                trackingId: { type: string, description: cnote_no }
+                statusCategory: { type: string, enum: [ON DELIVERY, DELIVERED, RTS], description: "Kirim tepat satu dari statusCategory / status" }
+                status: { type: string, enum: [ON DELIVERY, DELIVERED, RTS] }
+      responses:
+        '200':
+          description: Status tersimpan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { description: "Key tidak valid atau tanpa permission Check order status" }
+        '404': { description: "Bukan sandbox, order tidak ditemukan, atau milik akun lain" }
+        '409': { description: "Order sudah dihapus" }
+        '422': { description: "Kurir/identifier/target status tidak valid" }
   /api/public/{apiKey}/order/pay-unpaid:
     post:
       operationId: payUnpaid
@@ -596,6 +666,11 @@ webhooks:
           required: true
           schema: { type: string }
           description: HMAC-SHA256 signature dalam heksadesimal
+        - name: x-environment
+          in: header
+          required: false
+          schema: { type: string, enum: [sandbox] }
+          description: Hanya ada pada kiriman sandbox; tidak ikut ditandatangani. Tolak di receiver produksi.
       requestBody:
         required: true
         content:
@@ -854,8 +929,8 @@ components:
           type: string
           enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, spx]
           description: >-
-            Kurir untuk shipment. `spx` = SPX Express (Shopee Express): dikonfirmasi support Mengantar,
-            belum ada di docs resmi dan belum teramati di create-order live. Ninja discontinued per 1 September 2026.
+            Kurir untuk shipment (9 nilai di docs resmi, cek 2026-11-11). `spx` = SPX Express (Shopee Express):
+            tercantum di docs resmi, belum teramati di create-order live. Ninja discontinued per 1 September 2026.
         pickup: { $ref: '#/components/schemas/Pickup' }
         orders:
           type: array
@@ -912,7 +987,7 @@ components:
         deliveryInstruction: { type: string }
         dontIncludeSubdistrict: { type: boolean }
         cargo: { type: boolean, description: 'true → Cargo (JNE, SiCepat, Sap, iDexpress)' }
-        isDangerousGoods: { type: boolean, default: false, description: 'Dangerous Goods order (didukung: JT, SiCepat HALU, iDexpress Regular)' }
+        isDangerousGoods: { type: boolean, default: false, description: 'Dangerous Goods order. Konsisten di docs resmi: SiCepat (HALU), iDexpress; JT disebut di deskripsi field tetapi tidak di tabel DG — verifikasi di sandbox (docs/02 §2.1)' }
         dropShipper:
           type: object
           description: Data dropshipper tersimpan dari master dropshippers
@@ -943,6 +1018,9 @@ components:
         batch_id: { type: string }
         courier: { type: string }
         errors: { type: array, items: {} }
+        idempotentReplayed:
+          type: boolean
+          description: Ada (true) bila respons adalah replay idempotency — salinan, bukan status terkini
         data:
           type: array
           items:

@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["mengantar-client.ts"]
+  "include": ["mengantar-client.ts", "mengantar-client.typecheck.ts"]
 }

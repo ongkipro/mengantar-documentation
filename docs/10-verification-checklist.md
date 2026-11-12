@@ -10,7 +10,7 @@ Hal-hal yang harus dikonfirmasi dengan akun/sandbox. Jalankan cURL di
 
 Dicocokkan dengan `https://api-public.mengantar.com/docs/` — **tidak perlu** diverifikasi ulang (kecuali ingin cek nilai nyata):
 
-- ✅ Daftar endpoint (24) + method + parameter — lihat [01](01-api-reference.md) §2.
+- ✅ Daftar endpoint (25) + method + parameter — lihat [01](01-api-reference.md) §2.
 - ✅ Kode error resmi: `X000`, `X001`, `X002`, `X003`, `409 Conflict` (konkurensi batch JT/SiCepat), `429 Too Many Requests`.
 - ✅ `POST /time`: `date` = **`mm-dd-yyyy`**, `time` = slot `9:00`–`18:00`.
 - ✅ `courier` param estimate default = `JNE`; nilai `all` → map per kurir.
@@ -19,7 +19,7 @@ Dicocokkan dengan `https://api-public.mengantar.com/docs/` — **tidak perlu** d
 - ✅ Saldo kurang → order unpaid → `POST /order/pay-unpaid`.
 - ✅ Webhook resmi didukung penuh: verifikasi signature HMAC-SHA256 (`x-timestamp`, `x-signature`) over `${timestamp}.${raw_body}`.
 - ✅ Ninja Xpress discontinued per 1 September 2026 (`courier=Ninja` → `400 COURIER_DISABLED`); POS Indonesia aktif.
-  SPX **tidak** disebut di docs resmi — lihat temuan live §0d.
+  SPX kini **tercantum** di docs resmi (cek 2026-11-11); temuan live §0d (2026-09-25) belum dicek ulang.
 - ✅ Modul Dropshipper (`POST /dropshippers`, `GET /dropshippers`) & Update/Delete Pickup Address.
 - ✅ Async Label Generation (`POST /label-generation`, `GET /label-generation/{id}`) dengan rate-limit 8/menit.
 
@@ -74,12 +74,13 @@ Dikonfirmasi ulang langsung terhadap API produksi saat membangun integrasi live:
   (daftar: [02](02-couriers-and-rules.md) §1.2).
 - ⚠️ `…/order/allEstimatePublic` dengan parameter yang sama → `404 {"success":false,"message":"Not Found"}` pada akun
   ini. Belum dipastikan global.
-- ℹ️ Support Mengantar mengonfirmasi `POST /order` dengan `courier: "spx"` didukung — **belum teramati**.
+- ℹ️ Support Mengantar mengonfirmasi `POST /order` dengan `courier: "spx"` didukung, dan docs resmi kini mencantumkannya (cek 2026-11-11) — **belum teramati** live.
 
 **Masih terbuka (SPX):**
 - [ ] `POST /order` dengan `courier: "spx"` — respon nyata, `cnote_no`, status awal.
 - [ ] Arti `unsupportedPickup` dan hubungan `pickupSchedule` dengan `pickup.time_id` / `POST /time`.
-- [ ] Batas COD SPX, dukungan `cargo`, `isDangerousGoods`, `customProducts`, dan cetak label untuk SPX.
+- [ ] Minimum COD SPX, dukungan `cargo`, `isDangerousGoods`, `customProducts` untuk SPX (batas maksimum dan format label `thermal-new-*` untuk SPX sudah ada di docs resmi 2026-11-11).
+- [ ] Ulangi estimasi single-courier `courier=spx`: docs resmi kini mencantumkannya, live 2026-09-25 menjawab `400 Invalid courier`.
 - [ ] Nilai `courier` SPX di tracking/webhook/list order (`spx`?).
 - [ ] Path `allEstimatePublic` yang dipakai saat `404` — ulangi dengan path resmi tanpa key (`/api/order/allEstimatePublic`).
 

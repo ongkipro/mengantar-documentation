@@ -11,7 +11,7 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | **destination_id** (estimate) | ID **wilayah** tujuan (kecamatan/kelurahan). Sumber: `GET /address/search` → `_id`. Dipakai juga sbg `customerAddressDataId`. |
 | **pickup address _id** | `_id` objek alamat pickup dari `GET /address`. Dipakai utk `pickup.address_id` (create order) & `GET /time?address=`. Beda dari origin_id estimate. |
 | **courier (estimasi)** | Key kurir di response `/order/estimate` (mis. `jne`, `sicepatcargo`). Banyak varian. |
-| **courier (shipment)** | Nama kurir untuk `POST /order` — 8 nilai resmi (`JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`) + `spx` (dikonfirmasi support Mengantar, belum teramati live). *(Ninja discontinued per 1 Sept 2026)*. |
+| **courier (shipment)** | Nama kurir untuk `POST /order` — 9 nilai resmi (`JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx`; cek 2026-11-11). Create-order `spx` belum teramati live. *(Ninja discontinued per 1 Sept 2026)*. |
 | **courier key (estimasi)** | Key map respon `estimate?courier=all`, casing berbeda dari nama shipment (`JNE`, `JNECargo`, `SiCepat`, `SiCepatCargo`, `SAP`, `SAPLite`, `SapCargo`, `iDexpress`, `iDexpressCargo`, `JT`, `lion`, `anteraja`, `spx`, `pos` — live 2026-09-25). Pemetaan: [02](02-couriers-and-rules.md) §1.1. |
 | **cnote_no** | Nomor resi / consignment note. Field utama tracking dari response create/track. |
 | **ORDER_ID** | ID order internal Mengantar (per shipment). Dipakai untuk polling tracking. |
@@ -36,7 +36,8 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 
 | Field | Wajib | Catatan |
 |-------|:-----:|---------|
-| `courier` | ✅ | Nama shipment resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`; `spx` **[verifikasi]**. *(Ninja discontinued)*. |
+| `courier` | ✅ | Nama shipment resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` (create-order `spx` belum teramati live **[verifikasi]**). *(Ninja discontinued)*. |
+| *(header)* `idempotencyKey` | — | Opsional, 1–50 karakter; kunci & body sama persis saat retry. Lihat [01 §8.1a](01-api-reference.md). |
 | `pickup` | ✅ | Objek; minimal `type` + `address_id`. |
 | `orders` | ✅ | Array, ≥ 1 item. |
 | `assignee` | ⬜ | Hanya dikirim bila terisi (dari `GET /my-users`). |
@@ -71,7 +72,7 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | Konsep | Nilai sah |
 |--------|-----------|
 | Courier (shipment) | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` **[verifikasi]** *(Ninja discontinued per 1 Sept 2026)* |
-| Courier (estimate) param | Nama shipment persis (case-sensitive) **tanpa** `spx` (→ `400 Invalid courier`), plus `all` (**default `JNE`** bila tidak diisi) |
+| Courier (estimate) param | Nama shipment persis (case-sensitive) plus `all` (**default `JNE`** bila tidak diisi). Docs resmi (2026-11-11) mencantumkan `spx`, tetapi live 2026-09-25 `courier=spx` → `400 Invalid courier`; ambil SPX dari `all` sampai dicek ulang |
 | Pickup type | `scheduledPickup`, `dropOff` |
 | Volume | `volumeMotor`, `volumeMobil`, `volumeTruck` |
 | Pickup `time` (slot) | `9:00`, `10:00`, `11:00`, `12:00`, `13:00`, `14:00`, `15:00`, `16:00`, `17:00`, `18:00` |
@@ -86,9 +87,9 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | `ticketFilter` (list order) | `withticket`, `without`, `open`, `replied` |
 | `receiverFilter` (list order) | `1`–`10` |
 | Label Generation Status | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED` |
-| Label Generation Format | `A6` (thermal), `A4` (standar) |
-| Label Generation Type | `single`, `multiple` |
-| Error code (resmi) | `X000` (param hilang), `X001` (key invalid), `X002` (key salah domain), `X003` (token invalid), `409` (konkurensi batch JT/SiCepat), `429` (rate limit cetak label) |
+| Label Generation Format | `normal-1`, `normal-2`, `normal-4`, `normal-6`, `thermal-10x10`, `thermal-10x15`, `thermal-8x6`; `thermal-new-10x10`, `thermal-new-10x15` khusus JT / SPX (docs resmi 2026-11-11) |
+| Label Generation Request | Satu `orderId` per request; tidak ada field `type` |
+| Error code (resmi) | `X000` (param hilang), `X001` (key invalid), `X002` (key salah domain), `X003` (token invalid), `409` (konkurensi batch JT/SiCepat), `429` (rate limit cetak label), `IDEMPOTENCY_KEY_INVALID` / `IDEMPOTENCY_REQUEST_IN_PROGRESS` / `IDEMPOTENCY_REQUEST_UNRESOLVED` / `IDEMPOTENCY_KEY_REUSED` / `IDEMPOTENCY_UNAVAILABLE` (header `idempotencyKey`, [01 §8.1a](01-api-reference.md)) |
 
 ## 4. Opsi konfigurasi (dari konstanta plugin)
 

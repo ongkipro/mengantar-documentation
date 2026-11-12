@@ -2,6 +2,51 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu ke spec (`spec/openapi.yaml`).
 
+## [0.4.0] — 2026-11-12
+
+Disinkronkan dengan docs resmi per 2026-11-11 (`api-public.mengantar.com/docs/`; catatan khusus sandbox dibaca dari
+`sandbox.mengantar.com/docs/`, karena di host produksi bagian itu disembunyikan).
+
+### Added
+- **Idempotency key** untuk `POST /order`: header `idempotencyKey` (1–50 karakter, 24 jam per akun), aturan replay
+  (`Idempotent-Replayed`, respons 5xx pertama juga di-replay, 4xx melepas kunci, hapus batch tidak melepas kunci) dan
+  kode `IDEMPOTENCY_KEY_INVALID` / `_REQUEST_IN_PROGRESS` / `_REQUEST_UNRESOLVED` / `_KEY_REUSED` / `_UNAVAILABLE`.
+  Di [01 §8.1a](docs/01-api-reference.md), [08 §A1a](docs/08-error-catalog.md), [09 §10a](docs/09-curl-examples.md), spec.
+- **`POST /order/simulation`** (sandbox saja, produksi 404): endpoint ke-25 di 01, 09 §14a dan spec.
+- Client contoh: `createOrder(payload, { idempotencyKey })` (validasi panjang sebelum request), `simulateOrderStatus()`,
+  `MengantarError.retryAfter` dan `.idempotentReplayed`, `CreateOrderResponse.idempotentReplayed`; empat contract test baru
+  (15 total) dan `examples/mengantar-client.typecheck.ts` (cek tipe `@ts-expect-error`, ikut `make client-check`).
+- Spec: `idempotentReplayed` di `CreateOrderResponse`, header `Idempotent-Replayed` / `Retry-After`, `IDEMPOTENCY_KEY_INVALID`
+  pada 400, aturan "tepat satu" pada `/order/simulation`, header webhook `x-environment` (sandbox).
+- `requests.http` #28 (simulasi, sandbox) dan header `idempotencyKey` pada #18; README tabel endpoint + baris simulasi.
+
+### Changed
+- `MengantarError.code` kini mengutamakan field `code` body: 409 idempotency tidak lagi tertutup sebagai `"409"`
+  (409 konkurensi batch tanpa `code` tetap `"409"`).
+- [02 §6](docs/02-couriers-and-rules.md) Sandbox: webhook **aktif** di sandbox (dulu tercatat belum aktif), header
+  `x-environment: sandbox`, batas SPX, top-up via Midtrans simulator, endpoint whitelist terbuka dengan data contoh.
+- Dangerous Goods: hanya `SiCepat` (HALU) dan `iDexpress` konsisten di docs resmi; `JT` ditandai **[verifikasi]**
+  karena tabel DG Create Order tidak mencantumkannya.
+- **SPX** kini tercantum di docs resmi (9 nama shipment, cek 2026-11-11) di 01, 02, 05, 06, 07, 10, README, spec dan client;
+  create-order SPX tetap **[verifikasi]** (belum teramati live), dan hasil live 2026-09-25 (`400 Invalid courier` untuk
+  estimasi single-courier SPX) dicatat sebagai belum dicek ulang.
+- Webhook: 01 §11 tidak lagi berjudul "Production"; aktivasi per akun di produksi, aktif di sandbox, header
+  `x-environment: sandbox`. README tidak lagi menyebut webhook hanya untuk produksi.
+- 08 §E: retry `POST /order` lewat `idempotencyKey`; 409 dibedakan menurut `code`.
+- Label: format resmi (`normal-*`, `thermal-*`, `thermal-new-*` untuk JT/SPX) dan satu `orderId` per request
+  menggantikan `A6`/`A4`/`type` yang sudah usang di 03, 07 dan 09.
+- Jumlah endpoint 25 di README, 10, 11 (REQ-2: `paths: 18`), 12, examples/README dan requests.http.
+- SPX: batas COD maksimum Rp5.000.000 masuk tabel COD 02 §3.2; format `thermal-new-*` berlaku untuk JT **dan** SPX (01 §10.1);
+  semua pernyataan "estimasi single-courier SPX ditolak" kini bertanggal 2026-09-25 dan menyebut bahwa docs resmi sudah
+  mencantumkan `spx` (02, 07, 09, 10, 12, AGENTS, README, requests.http, examples, PHP guide).
+- Skema contoh `label_generations` (03): `order_ids text[]` → `order_id text` (satu order per request).
+
+### Fixed
+- `MengantarError.code`: field `code` kosong tidak lagi menimpa status `409`/`429`.
+- Tipe `LabelGenerationPendingResponse` / `LabelGenerationStatusResponse` kini bentuk `data` yang benar-benar
+  dikembalikan client (dulu bertipe envelope, sehingga `res.status` tidak terketik); contoh label di
+  `examples/README.md` (`orderIds`/`A6`/`type`) diganti ke kontrak resmi dan ikut dicek di `mengantar-client.typecheck.ts`.
+
 ## [0.3.3] — 2026-09-25
 
 ### Added

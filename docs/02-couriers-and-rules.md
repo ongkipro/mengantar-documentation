@@ -12,8 +12,8 @@ Ada **tiga "ruang nama" kurir** yang berbeda dalam ekosistem Mengantar:
    dan berbeda dari nama shipment (mis. `SAP` vs `Sap`, `SAPLite`, `SapCargo`, `spx`). Plugin WooCommerce mencocokkan
    key dalam bentuk lowercase **[plugin]** — cocokkan key secara **case-insensitive** agar tahan perubahan casing.
 2. **Nama Shipment** — Nilai string persis yang dikirimkan pada field `courier` di `POST /order`.
-   **8 nilai resmi** (docs resmi): `"JNE"`, `"SiCepat"`, `"Sap"`, `"iDexpress"`, `"JT"`, `"lion"`, `"anteraja"`, `"pos"`,
-   plus **`"spx"`** — dikonfirmasi support Mengantar, **belum** ada di docs resmi dan **belum teramati** di create-order live (lihat §1.2).
+   **9 nilai resmi** (docs resmi, cek 2026-11-11): `"JNE"`, `"SiCepat"`, `"Sap"`, `"iDexpress"`, `"JT"`, `"lion"`, `"anteraja"`,
+   `"pos"`, `"spx"`. Untuk `spx` create-order **belum teramati** live (lihat §1.2).
 3. **Label Tampilan** — Nama ramah yang ditampilkan kepada pembeli di halaman checkout web/storefront.
 
 ### 1.1 Tabel Pemetaan Kurir Lengkap
@@ -36,7 +36,7 @@ Set key bisa berbeda per akun/rute — selalu iterasi `Object.entries(data)`, ja
 | `lion` | Lion Parcel | `lion` | Aktif (Regular) |
 | `anteraja` | Anteraja | `anteraja` | Aktif (Regular) |
 | `pos` | POS Indonesia | `pos` | **Aktif Resmi** (Regular) |
-| `spx` | SPX Express (Shopee Express) | `spx` ⚠️ *dikonfirmasi support, belum teramati* | Aktif di estimasi (live 2026-09-25) |
+| `spx` | SPX Express (Shopee Express) | `spx` ⚠️ *ada di docs resmi; create-order belum teramati live* | Aktif di estimasi (live 2026-09-25) |
 | — *(dihilangkan dari `all`)* | Ninja Xpress | — | ❌ **Discontinued per 1 Sept 2026** |
 
 > Key dari versi lama repo ini / plugin (`idlite`/`idl`, `paxel`, `wahana`) **tidak muncul** di respon
@@ -61,9 +61,11 @@ Set key bisa berbeda per akun/rute — selalu iterasi `Object.entries(data)`, ja
      `SPX Express`, `Shopee Express`, `ShopeeExpress`, `SPXExpress`, `shopee`, `Shopee`, `SPXID`, `spxid`, `ShopeeXpress`,
      `Shopee Xpress`, `SPX_EXPRESS`, `spx_express`, `spxexpress`) → `400 {"success":false,"message":"Invalid courier"}`.
      Jadi: **ambil tarif SPX hanya dari `courier=all`**.
-   - **Create order:** support Mengantar mengonfirmasi SPX bisa dipakai di `POST /order` dengan `courier: "spx"`,
-     tetapi **belum ada di docs resmi dan belum teramati** di create-order live **[verifikasi]**. Uji dulu dengan satu
-     order sebelum mengaktifkan SPX di produksi. Batas COD, cargo, DG, dan `customProducts` untuk SPX belum diketahui.
+   - **Docs resmi (cek 2026-11-11)** kini mencantumkan `spx` di estimate, create order, pay-unpaid, delete dan simulasi,
+     dengan batas: berat ≤ 50 kg, COD ≤ Rp5.000.000, nilai barang non-COD ≤ Rp10.000.000; `dropOff` hanya bila SPX Drop Off
+     aktif di akun; slot pickup divalidasi ke jadwal live SPX. Create-order SPX **belum teramati** live **[verifikasi]**:
+     uji satu order dulu. Hasil live 2026-09-25 (estimasi single-courier `400 Invalid courier`) belum dicek ulang
+     setelah SPX masuk docs — tetap ambil tarif dari `courier=all` sampai terbukti lain.
 
 ---
 
@@ -78,8 +80,10 @@ Untuk produk yang membutuhkan perlakuan khusus (Dangerous Goods):
   |-------|------------------|------------|
   | `SiCepat` | `HALU` | Otomatis dialihkan ke armada SiCepat HALU |
   | `iDexpress` | `Regular service` | Dikirim via armada reguler berizin DG |
-  | `JT` | `Regular DG` | Didukung resmi untuk pengiriman DG |
-  *(Kurir lain belum mendukung bendera Dangerous Goods via public API).*
+  | `JT` | — | **[verifikasi]** Docs resmi tidak konsisten: deskripsi field Create Order menyebut `JT`, tabel DG Create Order hanya `SiCepat` & `iDexpress` |
+  *(Estimasi menyebut SiCepat, SAP, IDExpress & J&T sebagai DG-capable, tetapi hanya `SiCepat` dan `iDexpress` konsisten di Create Order.
+  Jangan tawarkan DG untuk `Sap` atau `JT` sebelum satu `POST /order` DG berhasil di sandbox: flag estimasi bisa lolos lalu order gagal
+  `Dangerous goods service is not supported by courier …`. Cek ulang docs 2026-11-11.)*
 
 ### 2.2 Pengiriman Kargo (`orders[].cargo`)
 Untuk paket berukuran besar / grosir:
@@ -107,7 +111,7 @@ Untuk paket berukuran besar / grosir:
 | AnterAja | 1.000 | 2.000.000 | Max COD Rp 2.000.000 |
 | POS | 1.000 | 2.000.000 | Mengikuti coverage POS |
 | SAP Cargo | — | — | ❌ **Tidak mendukung COD** |
-| SPX (`spx`) | ? | ? | COD teramati didukung di estimasi (2026-09-25); batas belum diketahui **[verifikasi]** |
+| SPX (`spx`) | ? | 5.000.000 | Docs resmi (2026-11-11): COD ≤ Rp5.000.000, non-COD nilai barang ≤ Rp10.000.000, berat ≤ 50 kg; minimum COD belum diketahui **[verifikasi]** |
 
 > ⚠️ Selalu evaluasi flag respon estimasi:
 > - `unsupported: true` → Kurir tidak melayani wilayah tersebut.
@@ -208,10 +212,17 @@ Field `orders.customProducts[]` (didukung kurir `JNE`, `SiCepat`, `Sap`, `JNT`):
 
 ## 6. Jebakan Lingkungan Sandbox (Sandbox Traps)
 
-Lingkungan Sandbox Mengantar (`https://sandbox.mengantar.com`) memiliki pembatasan khusus dari mitra ekspedisi:
+Lingkungan Sandbox Mengantar (`https://sandbox.mengantar.com`) memiliki pembatasan khusus dari mitra ekspedisi. Catatan
+sandbox di docs resmi **hanya tampil di host sandbox** (`sandbox.mengantar.com/docs/`; di host produksi disembunyikan) — dicek 2026-11-11:
 1. **JNE Sandbox:** Origin *wajib* berlokasi di **Jakarta** (destination bebas). Origin luar Jakarta akan memicu error: `Content not confirm our security Policy`.
 2. **SAP Sandbox:** Hanya mendukung rute **Jakarta → Jakarta** dan memblokir seluruh order COD. Rute lain memicu: `Service tidak ditemukan dalam kontrak`.
-3. **Webhook Sandbox:** Notifikasi Webhook **belum aktif di sandbox** karena status order sandbox bersifat statis (tidak bergerak dari kurir nyata). Pengujian webhook disarankan menggunakan *Official Test Vector* atau di lingkungan staging produksi.
+3. **SPX Sandbox:** Hanya menerima origin **Jakarta**, dan sebagian destinasi yang didukung di produksi ditolak.
+4. **Saldo sandbox:** pakai fitur **Top Up Saldo** di aplikasi sandbox, lalu bayar lewat Midtrans sandbox simulator (`https://simulator.sandbox.midtrans.com/`).
+5. **Webhook Sandbox:** **aktif untuk semua akun** tanpa perlu diaktifkan (di produksi diaktifkan per akun). Kiriman sandbox membawa header `x-environment: sandbox` (tidak ikut ditandatangani) — tolak di receiver produksi, dan pakai URL terpisah per lingkungan.
+6. **Simulasi status:** `POST /order/simulation` (sandbox saja) menggerakkan order ke `ON DELIVERY` / `DELIVERED` / `RTS` dan mengirim satu webhook, jadi alur end-to-end bisa diuji tanpa kurir sungguhan. Lihat [01 §9](01-api-reference.md).
+7. **Endpoint whitelist terbuka di sandbox:** skor performa kurir dan skor penerima (`getReceiverScoreByNumberUser` memberi data contoh deterministik; nomor berakhiran `0` → bentuk "no valid courier").
+
+*(Riwayat: versi ≤ 0.3.3 repo ini menyatakan webhook belum aktif di sandbox — sudah tidak berlaku.)*
 
 ---
 <sub>Bagian dari <a href="../README.md">Dokumentasi API Mengantar</a> · oleh <b><a href="https://ongki.pro">ongki.pro</a></b> — Official Partner Mengantar</sub>

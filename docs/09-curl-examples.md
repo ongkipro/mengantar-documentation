@@ -62,7 +62,7 @@ curl -sS -X POST "$MGT_PREFIX/time" \
 # Semua kurir
 curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&courier=all&weight=2" | jq '.data'
 
-# Tarif SPX: HANYA dari courier=all (courier=spx/SPX/... → 400 "Invalid courier").
+# Tarif SPX: ambil dari courier=all (live 2026-09-25: courier=spx/SPX/... → 400 "Invalid courier"; docs resmi kini mencantumkan spx).
 # Buang bila unsupported / unsupportedOriginSpx bernilai true.
 curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&courier=all&weight=1&COD_AMOUNT=100000" \
   | jq '.data.spx | select(. != null) | {price, estimate_delivery, unsupported, unsupported_cod, unsupportedOriginSpx, unsupportedPickup}'
@@ -124,6 +124,17 @@ Resi ada di `.data[0].cnote_no`, status pembayaran di `.data[0].isPaid`, order i
 `.data[0].ORDER_ID`, dan batch di `.data[0].batch_id`/`.batch_id`.
 > JT Premium / SiCepat: **jangan** kirim batch paralel — gabung ke satu request (hindari `409`). *(Ninja discontinued per 1 Sept 2026)*.
 
+### 10a. Create order idempotent (retry aman)
+
+```bash
+curl -sS -X POST "$MGT_PREFIX/order" \
+  -H 'Content-Type: application/json' \
+  -H 'idempotencyKey: INV-2026-0001' \
+  --data @order.json -D - -o response.json
+# Timeout/putus? Kirim ULANG perintah yang sama persis (kunci & order.json sama).
+# Header "Idempotent-Replayed: true" = salinan respons pertama, bukan order baru.
+```
+
 ## 11. Bayar order unpaid (saldo kurang saat create)
 ```bash
 curl -sS -X POST "$MGT_PREFIX/order/pay-unpaid" \
@@ -159,6 +170,15 @@ curl -sS -X DELETE "$MGT_PREFIX/batch" \
   -d '{"courier":"JNE","id":"BATCH_ID"}' | jq
 ```
 
+## 14a. Simulasi status order (SANDBOX saja)
+
+```bash
+curl -sS -X POST "$MGT_PREFIX/order/simulation" \
+  -H 'Content-Type: application/json' \
+  -d '{"courier":"JNE","orderId":"240429Q34UPQ","statusCategory":"DELIVERED"}'
+# Produksi selalu 404. Memicu satu webhook bila Webhook URL terpasang.
+```
+
 ## 15. Skor penerima (cek risiko RTS sebelum COD)
 ```bash
 curl -sS "$MGT_PREFIX/getReceiverScoreByNumberUser?search=8123456789" | jq '.data'
@@ -177,16 +197,17 @@ curl -sS "$MGT_PREFIX/dropshippers?name=Cantik" | jq '.data'
 
 ## 17. Cetak Label PDF Asinkron (BETA)
 ```bash
-# Request async label generation (format A6 thermal / A4, single / multiple)
+# Request async label generation: SATU orderId per request (array / daftar dipisah koma ditolak).
+# format: normal-1|normal-2|normal-4|normal-6, thermal-10x10|thermal-10x15|thermal-8x6,
+#         thermal-new-10x10|thermal-new-10x15 (khusus JT / SPX). Kuota 8 aksi Print / menit.
 curl -sS -X POST "$MGT_PREFIX/label-generation" \
   -H "Content-Type: application/json" \
   -d '{
+    "orderId":"ORDER-JNE-001",
     "courier":"JNE",
-    "orderIds":["ORDER_OBJECT_ID_1","ORDER_OBJECT_ID_2"],
-    "format":"A6",
-    "type":"multiple"
+    "format":"thermal-10x15"
   }' | jq
-# Response: HTTP 202 {"success":true,"message":"Label generation has been requested","data":{"id":"LABEL_GEN_ID","status":"PENDING"}}
+# Response: HTTP 202 {"success":true,"data":{"labelGenerationId":"LABEL_GEN_ID","status":"PENDING"}} — tidak pernah ada downloadUrl di sini
 
 # Cek status & ambil link unduh PDF (Google Cloud Storage signed URL 15 menit)
 curl -sS "$MGT_PREFIX/label-generation/LABEL_GEN_ID" | jq

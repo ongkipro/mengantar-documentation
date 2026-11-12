@@ -15,7 +15,7 @@ pickup, tracking). **Ini bukan aplikasi** — tidak ada build/test/runtime. Isi:
 ├── AGENTS.md / CLAUDE.md  # file ini — kontrak agent
 ├── Makefile               # entrypoint: make check | client-check | smoke | all
 ├── docs/                  # 01–14, dokumentasi kanonik (baca sesuai kebutuhan)
-├── spec/openapi.yaml      # OpenAPI 3.1, 24 endpoint — sumber untuk codegen client
+├── spec/openapi.yaml      # OpenAPI 3.1, 25 endpoint — sumber untuk codegen client
 ├── examples/              # client TypeScript no-dep (package.json + tsconfig) + cara pakai
 ├── scripts/               # check-links.sh (validasi) · smoke.sh (uji API read-only)
 ├── requests.http          # REST-client file (VS Code / JetBrains)
@@ -41,9 +41,10 @@ menjadi fakta pasti tanpa bukti dari akun asli.
 1. **API key server-only.** Key ada di **path** (`/api/public/{API_KEY}/…`), bukan header. **JANGAN**
    panggil API dari browser/klien — selalu proxy lewat server. **Redaksi key** di semua log.
 2. **Casing param persis.** `COD_AMOUNT` (huruf besar), bukan `cod_amount`. Nama kurir shipment
-   persis: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos` (+ `spx` — dikonfirmasi support
-   Mengantar, belum teramati di create-order live). Key respon `estimate?courier=all` berbeda casing (`SAP`, `SAPLite`,
-   `spx`, …) — petakan lewat `docs/02` §1.1. Estimasi single-courier SPX → `400 Invalid courier`; ambil dari `all`, dan
+   persis: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` (`spx` ada di docs resmi sejak
+   cek 2026-11-11; create-order belum teramati live). Key respon `estimate?courier=all` berbeda casing (`SAP`, `SAPLite`,
+   `spx`, …) — petakan lewat `docs/02` §1.1. Estimasi single-courier SPX → `400 Invalid courier` (live 2026-09-25, belum
+   dicek ulang); ambil dari `all`, dan
    perlakukan `unsupportedOriginSpx:true` seperti `unsupported:true`. *(Ninja discontinued per 1 Sept 2026)*.
 3. **`POST /time` → `date` format `mm-dd-yyyy`** (bulan-tanggal-tahun), bukan ISO. `time` = slot
    tetap `9:00`–`18:00`.
@@ -51,7 +52,7 @@ menjadi fakta pasti tanpa bukti dari akun asli.
    paralel → `409 Conflict`. Gabung semua order ke satu request.
 5. **`data` create order = ARRAY.** Nomor resi = **`cnote_no`** (bukan `tracking_id`).
 6. **Saldo kurang → order `unpaid`** (`cnote_no` kosong). Bayar via `POST /order/pay-unpaid`.
-7. **Idempotensi & retry.** Simpan `ORDER_ID`; polling tracking pakai backoff atau pasang Webhook resmi. Jangan retry buta pada
+7. **Idempotensi & retry.** `POST /order` dengan header `idempotencyKey` (kunci & body sama persis saat retry; lihat `docs/01` §8.1a). Simpan `ORDER_ID`; polling tracking pakai backoff atau pasang Webhook resmi. Jangan retry buta pada
    `success:false` dengan kode `X001`/`X002`/`X003` (masalah kredensial, bukan transient).
 8. **Normalisasi wilayah.** Nama provinsi/kota dari API tidak standar — lihat `docs/03-data-model.md` §6.
 

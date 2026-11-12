@@ -86,10 +86,10 @@ create table label_generations (
   id               uuid primary key default gen_random_uuid(),
   mgt_label_id     text not null unique,          -- id dari POST /label-generation
   courier          text not null,
-  format           text not null,                 -- A6 (thermal 10x15) atau A4
+  format           text not null,                 -- normal-1/2/4/6, thermal-10x10/10x15/8x6, thermal-new-10x10/10x15 (JT/SPX)
   status           text not null,                 -- PENDING, PROCESSING, COMPLETED, FAILED
   download_url     text,                          -- GCS signed URL (berlaku 15 menit)
-  order_ids        text[] not null,
+  order_id         text not null,                 -- satu ORDER_ID per request (docs resmi 2026-11-11)
   created_at       timestamptz default now(),
   updated_at       timestamptz default now()
 );

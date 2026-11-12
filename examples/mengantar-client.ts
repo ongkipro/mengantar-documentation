@@ -20,8 +20,9 @@ export type Courier =
   | "anteraja"
   | "pos"
   /**
-   * SPX Express (Shopee Express). Dikonfirmasi support Mengantar untuk `POST /order`, belum ada di docs resmi
-   * dan belum teramati di create-order live (2026-09-25). Tarifnya hanya muncul di `estimate({ courier: "all" })`.
+   * SPX Express (Shopee Express). Tercantum di docs resmi (cek 2026-11-11) untuk estimate, create order,
+   * pay-unpaid & simulasi; belum teramati di create-order live. Live 2026-09-25 estimasi single-courier SPX
+   * menjawab `400 Invalid courier` — tarifnya diambil dari `estimate({ courier: "all" })` sampai terbukti lain.
    */
   | "spx"
   /** @deprecated Discontinued per 1 September 2026. */
@@ -29,7 +30,8 @@ export type Courier =
 
 /**
  * Nilai `courier` untuk estimasi single/all. `spx` dikecualikan: estimasi single-courier menolak semua ejaan SPX
- * dengan `400 Invalid courier` (teramati 2026-09-25) — ambil tarif SPX dari `all`.
+ * dengan `400 Invalid courier` (teramati live 2026-09-25) — ambil tarif SPX dari `all`. Docs resmi (cek 2026-11-11)
+ * kini mencantumkan `spx` untuk estimasi; buka pengecualian ini hanya setelah satu panggilan live berhasil.
  */
 export type EstimateCourier = Exclude<Courier, "spx"> | "all";
 export type Volume = "volumeMotor" | "volumeMobil" | "volumeTruck";
@@ -51,8 +53,12 @@ export class MengantarError extends Error {
     message: string,
     readonly status: number,
     readonly body: unknown,
-    /** Kode resmi bila terdeteksi: X000/X001/X002/X003, "409", "429", atau field `code` body (mis. "COURIER_DISABLED"). */
+    /** Kode resmi bila terdeteksi: field `code` body (mis. "COURIER_DISABLED", "IDEMPOTENCY_REQUEST_IN_PROGRESS"), X000–X003, "409", "429". */
     readonly code?: string,
+    /** Header `Retry-After` (detik), mis. pada 409 IDEMPOTENCY_REQUEST_IN_PROGRESS. */
+    readonly retryAfter?: string,
+    /** true bila respons adalah replay idempotency (header `Idempotent-Replayed: true`). */
+    readonly idempotentReplayed = false,
   ) {
     super(message);
     this.name = "MengantarError";
@@ -174,8 +180,11 @@ export class MengantarClient {
     const env = body as Envelope<T>;
     if (!res.ok || (env && env.success === false)) {
       const msg = env?.errorsFront || env?.message || `HTTP ${res.status}`;
-      const code = res.status === 409 ? "409" : res.status === 429 ? "429" : detectErrorCode(env);
-      throw new MengantarError(msg, res.status, body, code);
+      // A body `code` (idempotency, COURIER_DISABLED, ...) is more specific than the bare status.
+      const bodyCode = typeof env?.code === "string" && env.code ? env.code : undefined;
+      const code = bodyCode ?? (res.status === 409 ? "409" : res.status === 429 ? "429" : detectErrorCode(env));
+      throw new MengantarError(msg, res.status, body, code, res.headers.get("Retry-After") ?? undefined,
+        res.headers.get("Idempotent-Replayed") === "true");
     }
     return (unwrap ? (env?.data ?? body) : body) as T;
   }
@@ -362,11 +371,32 @@ export class MengantarClient {
    * ⚠️ JT Premium / SiCepat: JANGAN panggil paralel — gabung semua order ke satu request
    * (request konkuren → 409). Saldo kurang → order unpaid (cnote_no kosong) → pakai payUnpaid().
    */
-  createOrder(payload: CreateOrderRequest) {
+  createOrder(payload: CreateOrderRequest, opts: { idempotencyKey?: string } = {}) {
+    const key = opts.idempotencyKey?.trim();
+    if (opts.idempotencyKey !== undefined && (!key || key.length > 50)) {
+      throw new MengantarError("idempotencyKey harus 1–50 karakter", 0, null, "IDEMPOTENCY_KEY_INVALID");
+    }
     return this.request<CreateOrderResponse>("POST", this.keyed(`/order`), {
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json", Accept: "application/json",
+        ...(key && { idempotencyKey: key }),
+      },
       body: JSON.stringify(payload),
       unwrap: false,
+    });
+  }
+
+  /**
+   * SANDBOX SAJA (`POST /order/simulation`): pindahkan order sendiri ke ON DELIVERY / DELIVERED / RTS
+   * dan picu satu webhook. Produksi menjawab 404. Kirim tepat satu dari orderId / trackingId.
+   */
+  simulateOrderStatus(input: {
+    courier: Exclude<Courier, "Ninja">;
+    statusCategory: "ON DELIVERY" | "DELIVERED" | "RTS";
+  } & ({ orderId: string; trackingId?: never } | { trackingId: string; orderId?: never })) {
+    return this.request<unknown>("POST", this.keyed(`/order/simulation`), {
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(input),
     });
   }
 
@@ -415,9 +445,8 @@ export class MengantarClient {
 // ── Deteksi kode error resmi dari body ──────────────────────────────────────
 function detectErrorCode(env: Envelope<unknown> | undefined): string | undefined {
   const hay = JSON.stringify(env?.errors ?? "") + " " + (env?.message ?? "");
-  const m = hay.match(/\bX00[0-3]\b/);
-  // Kode mesin di field `code`, mis. "COURIER_DISABLED" (docs resmi, kurir Ninja).
-  return m?.[0] ?? (typeof env?.code === "string" ? env.code : undefined);
+  // Field `code` body sudah diutamakan oleh request(); di sini hanya kode X000–X003 dari pesan/errors.
+  return hay.match(/\bX00[0-3]\b/)?.[0];
 }
 
 // ── Tipe response ───────────────────────────────────────────────────────────
@@ -524,18 +553,20 @@ export interface LabelGenerationRequest {
   format: LabelFormat;
 }
 
-export interface LabelGenerationPendingResponse extends Envelope<{
+/** `data` dari POST /label-generation (client mengembalikan `data`, bukan envelope). Tidak pernah ada downloadUrl. */
+export interface LabelGenerationPendingResponse {
   labelGenerationId: string;
   status: "PENDING";
-}> {}
+}
 
-export interface LabelGenerationStatusResponse extends Envelope<{
+/** `data` dari GET /label-generation/{id}. downloadUrl hanya saat COMPLETED, berlaku 15 menit per polling. */
+export interface LabelGenerationStatusResponse {
   labelGenerationId: string;
   status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
   format?: string;
   downloadUrl?: string;
   errorMessage?: string;
-}> {}
+}
 
 export type PickupRequest =
   | { type: "scheduledPickup"; address_id: string; time_id: string; volume: Volume }
@@ -574,6 +605,8 @@ export interface CreateOrderResponse extends Envelope<CreatedOrder[]> {
   batch_id?: string;
   courier?: string;
   errors?: unknown[];
+  /** true bila ini replay dari request sebelumnya dengan idempotencyKey yang sama (bukan state terkini). */
+  idempotentReplayed?: boolean;
 }
 
 export interface OrderQuery {

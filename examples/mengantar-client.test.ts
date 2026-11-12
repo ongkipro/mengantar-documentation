@@ -260,3 +260,81 @@ test("posCodIneligibility recognises only the documented Pos COD 403 statuses", 
   assert.equal(posCodIneligibility(await caught(refusing(400, { success: false, message: "x", status: "blocked" }))), null);
   assert.equal(posCodIneligibility(new Error("x")), null);
 });
+
+test("createOrder sends idempotencyKey as a header and validates its length", async () => {
+  const seen: Headers[] = [];
+  const client = new MengantarClient({
+    apiKey: "test-key",
+    fetchImpl: async (_url, init) => {
+      seen.push(new Headers(init?.headers));
+      return new Response(JSON.stringify({ success: true, data: [], batch_id: "b1", idempotentReplayed: true }),
+        { headers: { "Idempotent-Replayed": "true" } });
+    },
+  });
+  const order = {
+    courier: "JNE" as const,
+    pickup: { type: "dropOff" as const, address_id: "pickup-id" },
+    orders: [{ customerAddressDataId: "d", customerAddress: "a", customerName: "n", customerPhone: "08111111111",
+      parcelContent: "x", weight: 1, quantity: 1, goodsValue: 1000 }],
+  };
+  const replay = await client.createOrder(order, { idempotencyKey: "  INV-2026-0001  " });
+  assert.equal(seen[0].get("idempotencyKey"), "INV-2026-0001");
+  assert.equal(replay.idempotentReplayed, true);
+  await client.createOrder(order);
+  assert.equal(seen[1].get("idempotencyKey"), null);
+  for (const bad of ["", "   ", "x".repeat(51)]) {
+    assert.throws(() => client.createOrder(order, { idempotencyKey: bad }),
+      (e: unknown) => e instanceof MengantarError && e.code === "IDEMPOTENCY_KEY_INVALID");
+  }
+  assert.equal(seen.length, 2, "an invalid key must not reach the network");
+});
+
+test("idempotency 409s keep their body code and Retry-After", async () => {
+  const client = new MengantarClient({
+    apiKey: "test-key",
+    fetchImpl: async () => new Response(JSON.stringify({ success: false, code: "IDEMPOTENCY_REQUEST_IN_PROGRESS",
+      message: "still processing" }), { status: 409, headers: { "Retry-After": "10" } }),
+  });
+  const err = await client.createOrder({ courier: "JNE", pickup: { type: "dropOff", address_id: "p" }, orders: [] },
+    { idempotencyKey: "INV-1" }).then(() => null, (e: unknown) => e);
+  assert.ok(err instanceof MengantarError);
+  assert.equal(err.code, "IDEMPOTENCY_REQUEST_IN_PROGRESS");
+  assert.equal(err.retryAfter, "10");
+  const plain = new MengantarClient({ apiKey: "k", fetchImpl: async () =>
+    new Response(JSON.stringify({ success: false, message: "Sedang ada proses pembuatan order JT Premium" }), { status: 409 }) });
+  const e2 = await plain.createOrder({ courier: "JT", pickup: { type: "dropOff", address_id: "p" }, orders: [] })
+    .then(() => null, (e: unknown) => e);
+  assert.ok(e2 instanceof MengantarError);
+  assert.equal(e2.code, "409", "batch-concurrency 409 without a body code stays 409");
+});
+
+test("simulateOrderStatus posts to the sandbox-only simulation route", async () => {
+  const calls: { url: string; body: string }[] = [];
+  const client = new MengantarClient({
+    apiKey: "test-key",
+    fetchImpl: async (url, init) => { calls.push({ url: String(url), body: String(init?.body) });
+      return new Response(JSON.stringify({ success: true, data: { statusCategory: "DELIVERED" } })); },
+  });
+  await client.simulateOrderStatus({ courier: "JNE", orderId: "240429Q34UPQ", statusCategory: "DELIVERED" });
+  assert.match(calls[0].url, /\/api\/public\/test-key\/order\/simulation$/);
+  assert.deepEqual(JSON.parse(calls[0].body), { courier: "JNE", orderId: "240429Q34UPQ", statusCategory: "DELIVERED" });
+});
+
+test("a replayed 5xx keeps idempotentReplayed and an empty body code does not hide the status", async () => {
+  const client = new MengantarClient({
+    apiKey: "test-key",
+    fetchImpl: async () => new Response(JSON.stringify({ success: false, message: "Error on createOrderFunction",
+      idempotentReplayed: true }), { status: 500, headers: { "Idempotent-Replayed": "true" } }),
+  });
+  const err = await client.createOrder({ courier: "JNE", pickup: { type: "dropOff", address_id: "p" }, orders: [] },
+    { idempotencyKey: "INV-1" }).then(() => null, (e: unknown) => e);
+  assert.ok(err instanceof MengantarError);
+  assert.equal(err.status, 500);
+  assert.equal(err.idempotentReplayed, true, "a replayed 5xx must not be retried with the same key");
+  const blank = new MengantarClient({ apiKey: "k", fetchImpl: async () =>
+    new Response(JSON.stringify({ success: false, code: "", message: "busy" }), { status: 409 }) });
+  const e2 = await blank.createOrder({ courier: "JT", pickup: { type: "dropOff", address_id: "p" }, orders: [] })
+    .then(() => null, (e: unknown) => e);
+  assert.ok(e2 instanceof MengantarError);
+  assert.equal(e2.code, "409");
+});

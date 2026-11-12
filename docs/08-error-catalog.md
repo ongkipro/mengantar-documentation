@@ -20,6 +20,18 @@ Docs resmi mendefinisikan kode berikut (biasanya di body `message`/`errors` saat
 | `409 Conflict` | Konkurensi batch **JT Premium / SiCepat** — ada proses batch berjalan | Jangan kirim batch paralel; gabungkan ke 1 batch, atau antre & retry setelah batch sebelumnya selesai. *(Ninja discontinued)* |
 | `429 Too Many Requests` | Rate limit async label generation terlampaui (maks 8 aksi per menit) | Terapkan queue/rate-limiter di aplikasi klien, tunggu 60 detik sebelum request cetak berikutnya. |
 
+### A1a. Idempotency (`POST /order` dengan header `idempotencyKey`)
+
+| HTTP | `code` | Retry? |
+|------|--------|--------|
+| 400 | `IDEMPOTENCY_KEY_INVALID` | Tidak — perbaiki kunci (1–50 karakter). |
+| 409 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | Ya, setelah `Retry-After`, **kunci sama**. |
+| 409 | `IDEMPOTENCY_REQUEST_UNRESOLVED` | Jangan ulang buta — cek `GET /order`, kirim yang kurang dengan **kunci baru**. |
+| 422 | `IDEMPOTENCY_KEY_REUSED` | Tidak — body berbeda untuk kunci lama. |
+| 503 | `IDEMPOTENCY_UNAVAILABLE` | Ya, **kunci sama** (tidak ada yang dibuat). |
+
+Bedakan 409 idempotency dari 409 konkurensi batch lewat field `code`; 409 konkurensi tidak membawa `code`. Detail: [01 §8.1a](01-api-reference.md).
+
 ### A2. Error validasi kurir (HTTP `400`)
 
 | Respon | Kapan | Penanganan |
@@ -87,13 +99,17 @@ Plugin memblokir create shipment bila salah satu gagal — replikasikan validasi
 ## E. Pola penanganan yang disarankan (app sendiri)
 
 ```
-1. Network/timeout/5xx/JSON-invalid   → retry dengan backoff (idempoten via order_id).
+1. Network/timeout/5xx/JSON-invalid   → retry dengan backoff. POST /order: kirim header idempotencyKey + body sama persis
+                                        (§A1a). Replay 5xx (Idempotent-Replayed: true) jangan diulang dengan kunci sama:
+                                        cek GET /order, kirim order yang kurang dengan kunci baru.
 2. success:false + X001/X002/X003     → fatal config error (key/domain/token), stop, alert admin.
 3. success:false + X000               → parameter wajib hilang; perbaiki payload, jangan retry buta.
 3b. 400 Invalid courier / COURIER_DISABLED → nilai courier salah/nonaktif; perbaiki mapping, jangan retry.
 3c. 403 + status new_seller/insufficient/blocked (COD pos) → jangan retry; simpan alasan + deliveredRate,
     matikan COD pos di kebijakan kurir, tawarkan non-COD/kurir lain ([02](02-couriers-and-rules.md) §3.3).
-4. 409 Conflict (JT/SiCepat)          → antre; jangan kirim batch paralel, gabung ke 1 batch lalu retry (Ninja discontinued).
+4. 409 Conflict tanpa `code` (JT/SiCepat) → antre; jangan kirim batch paralel, gabung ke 1 batch lalu retry (Ninja discontinued).
+4a. 409 + code IDEMPOTENCY_REQUEST_IN_PROGRESS → tunggu Retry-After, retry kunci sama.
+4b. 409 + code IDEMPOTENCY_REQUEST_UNRESOLVED  → cek GET /order, kirim yang kurang dengan kunci baru.
 5. 429 Too Many Requests (Label Gen)  → kurangi kecepatan polling / request pembuatan label (maks 8 aksi/menit).
 6. success:false + pickup time error  → state "pending_pickup_time", jangan retry buta.
 7. Validasi pra-kirim gagal           → tolak di UI/sebelum API, tampilkan pesan spesifik.

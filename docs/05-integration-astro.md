@@ -218,7 +218,7 @@ const shipment = {
 ```
 
 `payload.courier` harus salah satu nama shipment resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`,
-`JT`, `lion`, `anteraja`, `pos`; `spx` dikonfirmasi support Mengantar tapi belum teramati live
+`JT`, `lion`, `anteraja`, `pos`, `spx` (`spx` ada di docs resmi tetapi create-order belum teramati live)
 ([02](02-couriers-and-rules.md) §1.2). *(Ninja discontinued per 1 Sept 2026)*.
 
 ## 6. Catatan

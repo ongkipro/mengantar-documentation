@@ -56,7 +56,7 @@ Jika satu fakta berubah, sinkronkan semua tempat yang memuat fakta itu: `01`, `0
 - `POST /time` memakai `date` format `mm-dd-yyyy`, slot jam `9:00`-`18:00`, minimal 90 menit dari sekarang.
 - `POST /time` mengembalikan satu objek slot di `data`; `GET /time` mengembalikan array.
 - `unsupported:true` (dan `unsupportedOriginSpx:true` pada entri `spx`) menyembunyikan kurir; `unsupported_cod:true` menyembunyikan COD untuk kurir tersebut.
-- Key estimasi (`SAP`, `SAPLite`, `spx`, …) ≠ nama shipment (`Sap`, `spx`, …); estimasi single-courier case-sensitive dan menolak SPX (`400 Invalid courier`).
+- Key estimasi (`SAP`, `SAPLite`, `spx`, …) ≠ nama shipment (`Sap`, `spx`, …); estimasi single-courier case-sensitive; SPX ditolak `400 Invalid courier` saat dites live 2026-09-25 (docs resmi kini mencantumkan `spx`, belum dicek ulang).
 - `POST /order` menerima batch; jangan panggil paralel untuk JT Premium dan SiCepat (Ninja discontinued per 1 Sept 2026).
 - Pertahankan envelope create-order: `data[]`, `batch_id`, dan `errors[]` semuanya bagian kontrak.
 - Saldo kurang menghasilkan response sukses dengan `isPaid=false` dan `cnote_no=null`; recovery via
@@ -124,7 +124,7 @@ make smoke-full     # sandbox only; melakukan operasi tulis pickup time
 - [ ] `make all` hijau, termasuk contract tests client.
 - [ ] Tidak ada API key/token nyata di Markdown, TypeScript, YAML, `.http`, atau script.
 - [ ] Link relatif Markdown valid.
-- [ ] Endpoint count tetap 24 operasi bila tidak ada perubahan resmi.
+- [ ] Endpoint count tetap 25 operasi bila tidak ada perubahan resmi.
 - [ ] `origin_id` vs `pickup_address_id` tidak tercampur di contoh.
 - [ ] Semua file `docs/` tetap memiliki footer `../README.md`.
 - [ ] Perubahan live/sandbox sudah dicatat di `docs/10-verification-checklist.md` bila berasal dari pengujian akun.

@@ -4,8 +4,9 @@ Kode contoh server-only untuk integrasi Mengantar. **Bukan** paket npm — salin
 
 | File | Isi |
 |------|-----|
-| [`mengantar-client.ts`](mengantar-client.ts) | Client TypeScript tanpa dependensi (fetch global). Semua 24 endpoint, typed, key di path, helper verifikasi webhook Web Crypto, error terstruktur. |
-| [`mengantar-client.test.ts`](mengantar-client.test.ts) | Suite pengujian kontrak (10 test cases) memvalidasi normalisasi tanggal, test vector webhook resmi, parameter safety, endpoint envelopes, filter ketersediaan rate (SPX), dan error kurir. |
+| [`mengantar-client.ts`](mengantar-client.ts) | Client TypeScript tanpa dependensi (fetch global). Semua 25 endpoint (termasuk `simulateOrderStatus` khusus sandbox dan `idempotencyKey` pada `createOrder`), typed, key di path, helper verifikasi webhook Web Crypto, error terstruktur. |
+| [`mengantar-client.test.ts`](mengantar-client.test.ts) | Suite pengujian kontrak (15 test cases) memvalidasi normalisasi tanggal, test vector webhook resmi, parameter safety, endpoint envelopes, filter ketersediaan rate (SPX), dan error kurir. |
+| [`mengantar-client.typecheck.ts`](mengantar-client.typecheck.ts) | Cek kontrak tipe saat kompilasi (`@ts-expect-error`), ikut `make client-check`: mis. `simulateOrderStatus` menolak Ninja dan menuntut tepat satu dari `orderId`/`trackingId`. |
 
 Untuk contoh berbasis framework:
 - **Astro:** [`../docs/05-integration-astro.md`](../docs/05-integration-astro.md) (Server Endpoints & Webhook APIRoute)
@@ -78,7 +79,7 @@ try {
 - `success:false` / HTTP non-2xx → `throw MengantarError` dengan `.code` (X000–X003 / 409 / 429, atau field `code` body seperti `COURIER_DISABLED`).
 - `posCodIneligibility(error)` — kenali 403 blokir COD Pos Indonesia (`new_seller`/`insufficient`/`blocked`) beserta `deliveredRate`; `null` untuk error lain ([02](../docs/02-couriers-and-rules.md) §3.3).
 - `isRateAvailable(rate, cod)` — filter ketersediaan rate (termasuk `unsupportedOriginSpx` untuk SPX).
-- Tipe `EstimateCourier` mengecualikan `spx`: estimasi single-courier SPX ditolak `400 Invalid courier` — ambil dari `courier: "all"`.
+- Tipe `EstimateCourier` mengecualikan `spx`: estimasi single-courier SPX ditolak `400 Invalid courier` saat dites live 2026-09-25 (docs resmi kini mencantumkan `spx`, belum dicek ulang) — ambil dari `courier: "all"`.
 - `createOrder()` mempertahankan envelope: order ada di `.data[]`, sedangkan `.batch_id` dan `.errors` tetap tersedia untuk unpaid/partial failure.
 
 **Belum di-handle (sengaja — logika app-mu):** caching GET, retry/backoff, queue create shipment,
@@ -212,23 +213,23 @@ const created = await mgt.createOrder({
 ### 8) Request & Polling Cetak Label PDF Asinkron
 
 ```ts
-// 1. Request cetak label (return HTTP 202 dengan status PENDING)
+// 1. Request cetak label: SATU orderId per request (HTTP 202, status PENDING, tanpa downloadUrl)
 const reqLabel = await mgt.requestLabelGeneration({
+  orderId: "ORDER-JNE-001",
   courier: "JNE",
-  orderIds: ["ORDER_OBJECT_ID_1", "ORDER_OBJECT_ID_2"],
-  format: "A6", // "A6" thermal atau "A4"
-  type: "multiple",
+  format: "thermal-10x15", // normal-1/2/4/6, thermal-10x10/10x15/8x6; thermal-new-* khusus JT/SPX
 });
-const labelJobId = reqLabel.data?.id!;
+const labelJobId = reqLabel.labelGenerationId;
 
-// 2. Polling status sampai COMPLETED (maks 8 aksi/menit)
+// 2. Polling status (Get tidak memakai kuota 8 Print/menit; jangan kirim Request baru untuk cek progres)
 for (let i = 0; i < 5; i++) {
   await new Promise(r => setTimeout(r, 10_000));
-  const statusRes = await mgt.getLabelGenerationStatus(labelJobId);
-  if (statusRes.data?.status === "COMPLETED") {
-    console.log("Download URL label PDF (berlaku 15 menit):", statusRes.data.downloadUrl);
+  const status = await mgt.getLabelGenerationStatus(labelJobId);
+  if (status.status === "COMPLETED") {
+    console.log("Download URL label PDF (berlaku 15 menit):", status.downloadUrl);
     break;
   }
+  if (status.status === "FAILED") throw new Error(status.errorMessage ?? "label gagal");
 }
 ```
 

@@ -1,8 +1,8 @@
-# Mengantar API — Referensi Lengkap (24 Endpoint + Webhook)
+# Mengantar API — Referensi Lengkap (25 Endpoint + Webhook)
 
 > Spesifikasi resmi Mengantar Public API, disinkronkan langsung dengan dokumentasi live
 > [Mengantar Public API](https://api-public.mengantar.com/docs/).
-> Mencakup **24 endpoint aktif**, arsitektur **Webhook resmi (HMAC-SHA256)**, modul **Dropshipper**,
+> Mencakup **25 endpoint aktif** (termasuk simulasi status khusus sandbox), arsitektur **Webhook resmi (HMAC-SHA256)**, modul **Dropshipper**,
 > cetak label PDF asynchronous, dan penanganan **Dangerous Goods (DG)**.
 
 ---
@@ -24,7 +24,7 @@ Semua request (kecuali endpoint public non-key) diarahkan ke URL berformat:
 ### Catatan Status Kurir (September 2026)
 - **Ninja Discontinued:** Efektif mulai **1 September 2026**, kurir `Ninja` resmi dinonaktifkan di seluruh public API Mengantar (tidak dapat digunakan untuk cek ongkir maupun pembuatan order).
 - **Kurir POS:** Resmi aktif dan didukung untuk pembuatan order (`pos`).
-- **Kurir SPX (Shopee Express):** Muncul sebagai key `spx` di `GET /order/estimate?courier=all` (live, produksi, 2026-09-25), tetapi **belum ada di docs resmi**. Estimasi single-courier untuk SPX ditolak (`400 Invalid courier`); create-order dengan `courier: "spx"` **dikonfirmasi support Mengantar, belum teramati live** **[verifikasi]**. Detail: [02-couriers-and-rules.md](02-couriers-and-rules.md) §1.2.
+- **Kurir SPX (Shopee Express):** `spx` **tercantum di docs resmi** (cek 2026-11-11) untuk estimate, create order, pay-unpaid dan simulasi. Live 2026-09-25 estimasi single-courier SPX menjawab `400 Invalid courier` (belum dicek ulang); create-order `spx` **belum teramati live** **[verifikasi]**. Detail & batas: [02-couriers-and-rules.md](02-couriers-and-rules.md) §1.2.
 
 ### Header Standar
 ```http
@@ -53,7 +53,7 @@ Jika gagal (`success: false`):
 
 ---
 
-## 2. Ringkasan Endpoint Resmi (Lengkap — 24 Endpoint + Webhook)
+## 2. Ringkasan Endpoint Resmi (Lengkap — 25 Endpoint + Webhook)
 
 | # | Method | Path | Kategori | Keterangan |
 |---|--------|------|----------|------------|
@@ -81,6 +81,7 @@ Jika gagal (`success: false`):
 | 22 | GET | `/getReceiverScoreByNumberUser?search=` | Pencegahan RTS | Cek skor riwayat & reputasi penerima sebelum kirim COD |
 | 23 | POST | `/label-generation` | Label PDF (BETA) | Request render label PDF asinkron (kuota 8 print/menit, whitelist) |
 | 24 | GET | `/label-generation/{id}` | Label PDF (BETA) | Cek status & download URL PDF label (aktif 15 menit) |
+| 25 | POST | `/order/simulation` | Sandbox | **Sandbox saja** (produksi 404): pindahkan order ke ON DELIVERY / DELIVERED / RTS + kirim 1 webhook |
 | ⚡ | POST | *URL Webhook Integrator* | Webhook | Event notifikasi perubahan status order (HMAC-SHA256 signature) |
 
 ---
@@ -240,10 +241,10 @@ curl -G '{BASE_URL}/api/public/{API_KEY}/order/estimate' \
 |-------|------|:-------:|------------|
 | `origin_id` | String | — | `_id` wilayah asal (dari `/address/search` atau `PICKUP_AUTOFILL`) |
 | `destination_id` | String | — | `_id` wilayah tujuan (dari `/address/search`) |
-| `courier` | String | `JNE` | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, atau `all`. **Case-sensitive**, divalidasi terhadap nama shipment (`Sap` ✅, `SAP`/`sap` ❌ → `400 Invalid courier`). SPX **tidak** bisa diminta sendiri — ambil dari `all`. *(Ninja discontinued → `400 COURIER_DISABLED`)* |
+| `courier` | String | `JNE` | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx`, atau `all`. **Case-sensitive**, divalidasi terhadap nama shipment (`Sap` ✅, `SAP`/`sap` ❌ → `400 Invalid courier`). Docs resmi (cek 2026-11-11) mencantumkan `spx`, tetapi live 2026-09-25 `courier=spx` menjawab `400 Invalid courier` — ambil tarif SPX dari `all` sampai dicek ulang **[verifikasi]**. *(Ninja discontinued → `400 COURIER_DISABLED`)* |
 | `weight` | Number | 1 | Berat total dalam satuan kg |
 | `COD_AMOUNT` | Number | — | *(opsional)* Nilai COD = Nilai Barang + Ongkir. Wajib bila ingin kalkulasi COD |
-| `isDangerousGoods`| Boolean | false | Set `true` atau `1` untuk tarif barang berbahaya (JT, SiCepat, iDexpress) |
+| `isDangerousGoods`| Boolean | false | Set `true` atau `1` untuk tarif barang berbahaya. Estimasi menandai SiCepat, Sap, iDexpress, JT sebagai DG-capable, tetapi `POST /order` hanya konsisten untuk SiCepat (HALU) & iDexpress — `Sap`/`JT` **[verifikasi]**, lihat [02 §2.1](02-couriers-and-rules.md) |
 
 > ⚠️ **Penting:**
 > 1. Respon `courier=all` berbentuk **Map Objek** `Record<string, CourierRate>`, bukan array.
@@ -395,11 +396,11 @@ curl -X POST '{BASE_URL}/api/public/{API_KEY}/order' \
 
 ### 8.1 Aturan Payload & Parameter Kunci
 1. **`courier`**:
-   - Nilai valid (docs resmi): `"JNE"`, `"SiCepat"`, `"Sap"`, `"iDexpress"`, `"JT"`, `"lion"`, `"anteraja"`, `"pos"`.
-   - `"spx"` (SPX / Shopee Express): **dikonfirmasi support Mengantar, belum ada di docs resmi, belum teramati di create-order live** **[verifikasi]**. Uji satu order dulu.
+   - Nilai valid (docs resmi): `"JNE"`, `"SiCepat"`, `"Sap"`, `"iDexpress"`, `"JT"`, `"lion"`, `"anteraja"`, `"pos"`, `"spx"`.
+   - `"spx"` (SPX / Shopee Express): **tercantum di docs resmi** (cek 2026-11-11), **belum teramati di create-order live** **[verifikasi]**. Uji satu order dulu; batas di [02 §1.2](02-couriers-and-rules.md).
    - ⚠️ `Ninja` telah discontinued per 1 Sept 2026.
 2. **`orders[].isDangerousGoods`**:
-   - Boolean (`true`/`false`). Didukung kurir: `JT`, `SiCepat` (otomatis masuk layanan `HALU`), dan `iDexpress` (layanan `Regular`).
+   - Boolean (`true`/`false`). Konsisten di docs resmi: `SiCepat` (layanan `HALU`) dan `iDexpress` (`Regular`). `JT` hanya disebut di deskripsi field, tidak di tabel DG — **[verifikasi]** di sandbox (lihat [02 §2.1](02-couriers-and-rules.md)).
 3. **`orders[].cargo`**:
    - Boolean (`true`/`false`). Kurir yang mendukung opsi kargo: `JNE`, `SiCepat`, `Sap`, `iDexpress`.
 4. **`orders[].dropShipper`**:
@@ -412,6 +413,24 @@ curl -X POST '{BASE_URL}/api/public/{API_KEY}/order' \
      - `orders.weight` **harus persis sama** dengan $\sum (\text{qty} \times \text{weight})$.
      - `orders.quantity` **harus persis sama** dengan $\sum (\text{qty})$.
    - Kurir yang mendukung rincian produk: `JNE`, `SiCepat`, `Sap`, `JNT`.
+
+### 8.1a Idempotency Key (opsional, sangat disarankan)
+Request create order bisa *timeout* di sisi Anda padahal Mengantar masih membuat batch-nya; retry biasa akan membuat order **dua kali**. Kirim header `idempotencyKey` berisi referensi milik Anda (mis. nomor invoice), dan kirim **nilai & body yang sama persis** pada setiap retry.
+
+- 1–50 karakter (spasi depan/belakang diabaikan), diingat **24 jam per akun**; hanya dibaca dari header, diabaikan pada request `validate`.
+- Sama kunci + sama body (urutan field JSON tidak berpengaruh) → respons pertama di-*replay* dengan header `Idempotent-Replayed: true` dan field `"idempotentReplayed": true`. Replay adalah **salinan**, bukan status terkini; pakai `GET /order`.
+- Respons pertama 5xx juga di-replay (bisa saja sebagian batch sudah dibuat), tidak dijalankan ulang. 4xx sebelum order dibuat **melepas** kunci: perbaiki body, kirim lagi dengan kunci yang sama.
+- Menghapus batch/order **tidak** melepas kunci: untuk membuat ulang, pakai kunci baru.
+
+| HTTP | `code` | Tindakan |
+|------|--------|----------|
+| 400 | `IDEMPOTENCY_KEY_INVALID` | Kunci kosong / > 50 karakter. Tidak ada batch dibuat. |
+| 409 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | Request pertama masih diproses: tunggu `Retry-After` detik, retry dengan kunci sama. |
+| 409 | `IDEMPOTENCY_REQUEST_UNRESOLVED` | Request pertama tak pernah selesai: cek `GET /order`, kirim order yang belum ada dengan **kunci baru**. |
+| 422 | `IDEMPOTENCY_KEY_REUSED` | Kunci sudah dipakai untuk body lain. |
+| 503 | `IDEMPOTENCY_UNAVAILABLE` | Kunci tak bisa dicek, tidak ada yang dibuat: retry dengan kunci sama. |
+
+Client contoh: `client.createOrder(payload, { idempotencyKey: "INV-2026-0001" })`; error membawa `code`, `retryAfter`, dan `idempotentReplayed`.
 
 ### 8.2 Konkurensi Batch (JT Premium & SiCepat)
 Untuk kurir dengan generate resi terpusat di server (**JT Premium & SiCepat**):
@@ -431,6 +450,7 @@ Jika saldo akun tidak mencukupi untuk order Non-COD, API **tidak melempar error*
   - Format timestamp riwayat: `history[].date` terstandarisasi dalam format `DD-MM-YYYY HH:mm` (WIB).
 - **Hapus / Batal Order:** `DELETE /order` (body: `{ "courier": "...", "ids": ["..."] }`). Khusus kurir Anteraja, pembatalan hanya dapat dilakukan setelah 5 menit sejak order dibuat.
 - **Hapus Batch:** `DELETE /batch` (body: `{ "courier": "...", "id": "..." }`).
+- **Simulasi Status (sandbox saja):** `POST /order/simulation` body `{ "courier": "JNE", "orderId": "...", "statusCategory": "DELIVERED" }` (tepat satu dari `orderId`/`trackingId`, tepat satu dari `statusCategory`/`status`; nilai `ON DELIVERY` / `DELIVERED` / `RTS`). Mengirim satu webhook bila Webhook URL terpasang, sehingga alur buat order → simulasi → baca order bisa diuji tanpa kurir sungguhan. Butuh permission key **Check order status**. Error: `401` key/permission, `404` bukan sandbox / order tidak ditemukan / milik akun lain, `409` order sudah dihapus, `422` kurir/identifier/target tidak valid (dengan `supportedValues` untuk target). Produksi menjawab 404; Ninja tidak didukung.
 - **Skor Penerima:** `GET /getReceiverScoreByNumberUser?search={phone}`. Memeriksa rasio sukses deliveri vs RTS nomor HP pelanggan sebelum Anda memproses order COD berisiko tinggi.
 
 ---
@@ -460,7 +480,7 @@ curl -X POST '{BASE_URL}/api/public/{API_KEY}/label-generation' \
 |--------|---------------------|
 | `normal-1`, `normal-2`, `normal-4`, `normal-6` | Semua kurir |
 | `thermal-10x10`, `thermal-10x15`, `thermal-8x6` | Semua kurir |
-| `thermal-new-10x10`, `thermal-new-10x15` | **Khusus order J&T (JT)** |
+| `thermal-new-10x10`, `thermal-new-10x15` | **Khusus order J&T (JT) atau SPX Express (`spx`)** |
 
 ### 10.2 Polling Status Label — `GET /label-generation/{labelGenerationId}`
 ```bash
@@ -474,7 +494,7 @@ curl -X GET '{BASE_URL}/api/public/{API_KEY}/label-generation/66d84347d792a71058
 
 ---
 
-## 11. Arsitektur Webhook Resmi Mengantar (Production)
+## 11. Arsitektur Webhook Resmi Mengantar
 
 Mengantar kini menyediakan webhook berbasis push untuk memperbarui status pesanan secara real-time tanpa perlu polling `GET /order`.
 
@@ -484,6 +504,8 @@ Konfigurasikan Webhook URL Anda di:
 - Membutuhkan verifikasi OTP saat pertama kali menyimpan.
 - Otomatis men-generate **`Webhook Secret`** rahasia Anda.
 - URL wajib HTTPS dan dapat diakses publik.
+- **Produksi:** webhook diaktifkan per akun selama rollout bertahap (bagian Webhook baru muncul setelah akun diaktifkan).
+  **Sandbox:** aktif untuk semua akun; uji status dengan `POST /order/simulation` (§9).
 
 ### 11.2 Payload yang Dikirimkan Mengantar
 Mengantar mengirim `POST` dengan body JSON setiap kali status order berubah:
@@ -500,6 +522,10 @@ x-signature: 05826dec707ea7164801d952cb7eaf7ce9adc0c8aa0b93366480434164a1a111
   "status_category": "DELIVERED"
 }
 ```
+
+Kiriman dari **sandbox** membawa satu header tambahan, `x-environment: sandbox`; kiriman produksi tidak membawa header
+`x-environment` sama sekali. Header ini **tidak** ikut ditandatangani. Tolak `x-environment: sandbox` di receiver produksi,
+dan tetap gunakan Webhook URL terpisah per lingkungan.
 
 ### 11.3 Status Category Resmi
 - **Kurir:** `PENDING PICKUP`, `PICKED UP`, `ON DELIVERY`, `DELIVERED`, `UNDELIVERED`, `PICKUP FAILED`, `RTS`.
@@ -537,6 +563,7 @@ Menggunakan `Webhook Secret` Anda sebagai HMAC key.
 | `X002` | `secret_key` tidak valid untuk domain ini | Gunakan key tipe Universal / Developer atau daftarkan domain |
 | `X003` | User token tidak valid / kadaluarsa | Refresh token user |
 | `409 Conflict` | Konkurensi batch JT Premium / SiCepat | Antrekan request, gabungkan order ke 1 batch array |
+| `400`/`409`/`422`/`503` `IDEMPOTENCY_*` | Header `idempotencyKey` pada `POST /order` | Lihat §8.1a |
 | `400` `COURIER_DISABLED` | Kurir dinonaktifkan (mis. `courier=Ninja`) | Hapus kurir dari opsi |
 | `400` `Invalid courier` | Nilai `courier` di estimasi tidak dikenali (case-sensitive; termasuk semua ejaan SPX) — teramati live 2026-09-25 | Pakai nama shipment persis; SPX ambil dari `courier=all` |
 | `429 Too Many Requests` | Limit cetak label terlampaui | Batasi maksimal 8 aksi print per 60 detik |

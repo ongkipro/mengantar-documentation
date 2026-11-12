@@ -46,8 +46,8 @@ Produk utama repo ini:
 - **Acceptance:** `examples/mengantar-client.ts` meredaksi key pada `onRequest`; `README.md`, `docs/01-api-reference.md`, dan `examples/README.md` menyebut server-only.
 
 ### REQ-2 — Endpoint catalog completeness
-- **Statement:** Ketika endpoint resmi Mengantar didokumentasikan, maka daftar endpoint harus berjumlah 24 operasi dan sinkron antara README, `docs/01-api-reference.md`, OpenAPI, dan client TypeScript.
-- **Acceptance:** `make check` melaporkan OpenAPI `paths: 17`; `make client-check` dan `make client-test` lulus.
+- **Statement:** Ketika endpoint resmi Mengantar didokumentasikan, maka daftar endpoint harus berjumlah 25 operasi dan sinkron antara README, `docs/01-api-reference.md`, OpenAPI, dan client TypeScript.
+- **Acceptance:** `make check` melaporkan OpenAPI `paths: 18`; `make client-check` dan `make client-test` lulus.
 
 ### REQ-3 — Area ID vs pickup address ID separation
 - **Statement:** Ketika flow menggunakan origin, maka docs harus membedakan `origin_id` ongkir (`PICKUP_AUTOFILL`, wilayah `_id`) dari `pickup.address_id` (`_id` alamat pickup dari `GET /address`).
