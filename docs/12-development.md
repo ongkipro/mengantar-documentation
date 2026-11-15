@@ -41,6 +41,8 @@ Urutan prioritas saat ada konflik:
 4. `docs/01-api-reference.md` untuk penjelasan manusia.
 5. `examples/mengantar-client.ts` untuk implementasi helper typed.
 
+Pengingat update: jalankan `make docs-watch` (membandingkan <https://api-public.mengantar.com/docs/> dengan `docs/official-snapshot/`); jika exit 1, sinkronkan lalu `bash scripts/docs-watch.sh --update`.
+
 Jika satu fakta berubah, sinkronkan semua tempat yang memuat fakta itu: `01`, `07`, `spec`, `examples`, `requests.http`, dan `README` bila masuk indeks/summary.
 
 ---

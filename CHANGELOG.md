@@ -2,6 +2,11 @@
 
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu ke spec (`spec/openapi.yaml`).
 
+## [Unreleased]
+
+### Added
+- `scripts/docs-watch.sh` + `make docs-watch` + `docs/official-snapshot/` (salinan teks docs resmi 2026-11-14) sebagai pengingat/detektor update dari `https://api-public.mengantar.com/docs/`.
+
 ## [0.4.0] — 2026-11-12
 
 Disinkronkan dengan docs resmi per 2026-11-11 (`api-public.mengantar.com/docs/`; catatan khusus sandbox dibaca dari

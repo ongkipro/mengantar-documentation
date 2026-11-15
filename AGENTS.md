@@ -36,6 +36,8 @@ Tiap klaim di `docs/` ditandai tingkat kepercayaannya — **hormati tanda ini**:
 Kalau menambah fakta baru, **selalu beri tanda sumbernya**. Jangan turunkan fakta `[verifikasi]`
 menjadi fakta pasti tanpa bukti dari akun asli.
 
+**Cek update docs resmi:** `make docs-watch` (sumber: `https://api-public.mengantar.com/docs/`, snapshot di `docs/official-snapshot/`). Exit 1 = docs berubah → sinkronkan `docs/`, `spec/`, `examples/`, `requests.http`, `CHANGELOG.md`, lalu `bash scripts/docs-watch.sh --update`.
+
 ## Aturan emas integrasi (jangan dilanggar)
 
 1. **API key server-only.** Key ada di **path** (`/api/public/{API_KEY}/…`), bukan header. **JANGAN**

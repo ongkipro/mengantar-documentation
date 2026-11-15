@@ -1,0 +1,3054 @@
+Mengantar Public API Documentation
+Mengantar Public
+API Documentation
+GET STARTED
+Search address data
+Add user's address
+get user's addresses
+Delete address
+Update address
+Add Time
+Get Time
+Check Shipping Fee
+Check Shipping Fee Public
+Check Shipping Fee 3PL
+Get Courier Performance
+Get Invoices and Balance
+Add Dropshipper
+Search Dropshipper
+Create order
+Get My Users (assignee)
+Pay unpaid
+Get orders
+Simulate Order Status (Sandbox)
+Delete orders
+Get batches
+Delete batch
+Get Receiver Score Number
+Print Label PDF (BETA)
+Webhook
+Errors
+-->
+Get started
+API Endpoint: {BASE_URL}/api/public/{API_KEY}
+To use this API, you need an API key.
+Generate your own API key from
+Account Settings (Pengaturan Akun) in the Mengantar
+app. This works the same way in sandbox and in production; each
+environment issues its own key.
+Base URL :
+⚠ Ninja is discontinued — effective 1 September 2026
+Starting 1 September 2026, Ninja is
+no longer available on the Mengantar public API:
+Check Shipping Fee (cek ongkir) —
+Ninja is no longer a valid
+courier value and is no longer returned as a
+selectable rate.
+Create Order — new shipments can no
+longer be created with Ninja.
+Pay Unpaid — unpaid
+Ninja orders can no longer be paid, because
+completing the payment generates the tracking number and creates
+the shipment. Contact Mengantar support for any left over from
+before the cut-off.
+Existing Ninja data is not affected —
+orders and batches created before the cut-off can still be
+retrieved and tracked through the read endpoints (Get orders, Get batches) as usual.
+Direct Check Shipping Fee requests with
+courier=Ninja return HTTP 400 with
+code: COURIER_DISABLED. Historical order and batch
+reads remain available for both couriers.
+Print Label PDF (BETA) — asynchronous
+This API creates a PDF label in the background. There are two
+separate endpoints: Request creates a generation job; Get returns
+its current result.
+Request never returns a download URL. A URL is
+returned only by Get when the status is COMPLETED.
+1. Request Label Generation
+POST
+{BASE_URL}/api/public/{API_KEY}/label-generation
+Submit one paid order with an available tracking number. The order
+must belong to the account that owns the API key. This endpoint
+accepts exactly one orderId; arrays and comma-,
+semicolon-, or space-separated order IDs are rejected. The API key
+must have the labelGeneration permission.
+BODY PARAMETERS
+Field
+Type
+Required
+Description
+orderId
+String
+Yes
+One existing, non-deleted order ID owned by the API key
+account.
+courier
+String
+Yes
+The courier of that order, for example JNE,
+JT, or spx (SPX Express).
+format
+String
+Yes
+The label layout listed in the format table below.
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/label-generation' \
+-H 'Content-Type: application/json' \
+-d '{
+"orderId": "ORDER-JNE-001",
+"courier": "JNE",
+"format": "normal-1"
+}'
+HTTP 202
+{
+"success": true,
+"data": {
+"labelGenerationId": "66d84347d792a71058fd6c10",
+"status": "PENDING"
+}
+}
+Store labelGenerationId and use it with Get. The
+response deliberately has no downloadUrl, even if an
+earlier request for the same active order and format is reused.
+Several orders across couriers
+Multi-order submission in one HTTP request is not supported. Send
+one Request per order and retain one generation ID per request.
+POST /label-generation
+{ "orderId": "ORDER-JNE-001", "courier": "JNE", "format": "normal-1" }
+POST /label-generation
+{ "orderId": "ORDER-JT-002", "courier": "JT", "format": "thermal-new-10x15" }
+POST /label-generation
+{ "orderId": "ORDER-POS-003", "courier": "POS", "format": "normal-2" }
+Each response: HTTP 202
+{ "success": true, "data": { "labelGenerationId": "<unique-id>", "status": "PENDING" } }
+2. Get Label Generation Status
+GET
+{BASE_URL}/api/public/{API_KEY}/label-generation/{labelGenerationId}
+labelGenerationId is the 24-character ID returned by
+Request. Get is read-only and does not consume the Print action
+limit. Poll at a reasonable interval; do not submit a new Request
+merely to check progress. The API key must have the
+labelGeneration
+permission.
+PATH PARAMETERS
+Field
+Type
+Description
+labelGenerationId
+String
+Generation ID returned by Request.
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/label-generation/66d84347d792a71058fd6c10'
+Lifecycle and responses
+Status
+Meaning
+downloadUrl
+Next action
+PENDING
+Queued, or waiting for a retry after a transient failure.
+Not present
+Poll Get.
+PROCESSING
+A worker is preparing, rendering, validating, or uploading the
+PDF.
+Not present
+Poll Get.
+COMPLETED
+PDF validation and private storage upload succeeded.
+Present for 15 minutes per poll.
+Download the PDF before the URL expires; poll again for a
+fresh URL.
+FAILED
+The job cannot continue after validation failure or all
+attempts are exhausted.
+Never present
+Read errorMessage, correct the cause, then submit
+a new Request if appropriate.
+PENDING: HTTP 200
+{
+"success": true,
+"data": {
+"labelGenerationId": "66d84347d792a71058fd6c10",
+"status": "PENDING"
+}
+}
+PROCESSING: HTTP 200
+{
+"success": true,
+"data": {
+"labelGenerationId": "66d84347d792a71058fd6c10",
+"status": "PROCESSING"
+}
+}
+COMPLETED: HTTP 200
+{
+"success": true,
+"data": {
+"labelGenerationId": "66d84347d792a71058fd6c10",
+"status": "COMPLETED",
+"format": "normal-1",
+"downloadUrl": "https://storage.googleapis.com/mengantar-bucket/download/<user-id>/pdf/label-order-ORDER-JNE-001-<attempt-id>.pdf?X-Goog-Algorithm=..."
+}
+}
+FAILED: HTTP 200
+{
+"success": true,
+"data": {
+"labelGenerationId": "66d84347d792a71058fd6c10",
+"status": "FAILED",
+"errorMessage": "Failed to generate label PDF"
+}
+}
+Label formats
+Format
+Availability
+normal-1, normal-2,
+normal-4, normal-6
+Supported couriers.
+thermal-10x10, thermal-10x15,
+thermal-8x6
+Supported couriers.
+thermal-new-10x10, thermal-new-10x15
+J&T or SPX Express orders only.
+Rate limit
+Request Label Generation is a final Print action. The limit is
+8 Print actions per 60 seconds, shared between
+Seller Web and Public API for the same parent account. A valid
+Request uses one action even when it returns an existing active
+generation. Get Status does not use this limit.
+Error examples
+Situation
+HTTP
+Example response
+Invalid, disabled, or missing API key
+403
+{ "success": false, "message": "Not allowed" }
+API key has no labelGeneration permission
+403
+{ "success": false, "message": "Not allowed" }
+Request IP is not allowed
+403
+{ "success": false, "message": "Not allowed" }
+Order belongs to another account
+403
+{ "success": false, "message": "Order does not belong to
+this account" }
+Order is not found for the selected courier
+404
+{ "success": false, "message": "Order not found" }
+Generation ID is malformed, absent, or not owned by this
+account
+404
+{ "success": false, "message": "Data not found" }
+Format is unknown or incompatible with the courier
+400
+{ "success": false, "message": "Format 'thermal-new-10x15'
+is only available for JT or SPX orders" }
+More than one order ID is sent
+400
+{ "success": false, "message": "Only one orderId is allowed
+per request..." }
+Print action rate limit is reached
+429
+{ "success": false, "message": "Print limit exceeded:
+maximum 8 Print actions per minute..." }
+Gotenberg rendering fails after its retries
+200 from Get
+{ "success": true, "data": { "status": "FAILED",
+"errorMessage": "Failed to generate label PDF" } }
+Search address data by keyword
+# Here is a curl example
+curl -X GET {BASE_URL}/api/public/{API_KEY}/address/search?keyword=papua
+Used to get origin and destination codes
+GET
+{BASE_URL}/api/public/{API_KEY}/address/search
+In this API, {API_KEY} can be filled by any string because it
+will not be validated, still using the structure, as its part
+of our legacy system.
+Result example :
+{
+"success": true,
+"data": [
+{
+"COUNTRY_NAME": "Indonesia",
+"closedSi": true,
+"unsupportedSi": true,
+"change": 1,
+"_id": "5fc63038f8f44b34aa4c1cc4",
+"PROVINCE_NAME": "PAPUA",
+"CITY_NAME": "MERAUKE",
+"DISTRICT_NAME": "MUTING",
+"SUBDISTRICT_NAME": "SEED AGUNG (SEDAYU AGUNG PRASASTI)",
+"ZIP_CODE": "99652",
+"DESTINATION_CODE": "DJJ20411",
+"createdAt": "2020-12-01T11:59:52.763Z",
+"updatedAt": "2022-06-08T15:36:19.860Z",
+"__v": 0,
+"ORIGIN_CODE": "DJJ20400",
+"CITY_NAME_SI": "Kab. Merauke",
+"DESTINATION_CODE_SI": "DJJ20411",
+"ORIGIN_CODE_SI": "MKQ",
+"CODE_SAP": "PA1510"
+},
+]
+}
+QUERY PARAMETERS
+Field
+Type
+Description
+keyword
+String
+Province / City / District / Subdistrict / Zip
+Add user's address
+# Here is a curl example
+curl \
+-X POST '{BASE_URL}/api/public/{API_KEY}/address' \
+-H 'Content-Type: application/json' \
+-d '{
+"PICKUP_AUTOFILL": "5fc62deaf8f44b34aa4bdd62",
+"PICKUP_ADDRESS": "Jl. Sederhana No. 142",
+"PICKUP_PIC_PHONE": "085270391495",
+"PICKUP_PIC": "PIC Name",
+"PICKUP_NAME": "Seller or Store Name",
+"pinpointData": {
+"lat": -6.1755636,
+"lng": 106.8271706
+}
+}'
+To add address to your account first need to get address data from
+GET /address/search
+POST
+{BASE_URL}/api/public/{API_KEY}/address
+Result example :
+{
+"success": true,
+"data": {
+"isHide": false,
+"dontIncludeSubdistrict": false,
+"isPlant": false,
+"_id": "632d6c76361422945dbaafd8",
+"PICKUP_AUTOFILL": "5fc63038f8f44b34aa4c1cc4",
+"PICKUP_ADDRESS": "Jl. Sederhana No. 142",
+"PICKUP_PIC_PHONE": "085270391495",
+"PICKUP_PIC": "PIC Name",
+"PICKUP_NAME": "Seller or Store Name",
+"pinpointData": {
+"lat": -6.1755636,
+"lng": 106.8271706
+},
+"user_id": "5fc6289532d4f232eb029ac8",
+"PICKUP_DISTRICT": "MUTING",
+"PICKUP_SUBDISTRICT": "SEED AGUNG (SEDAYU AGUNG PRASASTI)",
+"PICKUP_REGION": "PAPUA",
+"PICKUP_CITY": "MERAUKE",
+"PICKUP_CITY_SI": "Kab. Merauke",
+"PICKUP_ZIP": "99652",
+"PICKUP_DESTINATION_CODE": "DJJ20411",
+"PICKUP_DESTINATION_CODE_SI": "DJJ20411",
+"PICKUP_ORIGIN_CODE": "DJJ20400",
+"PICKUP_ORIGIN_CODE_SI": "MKQ",
+"PICKUP_SAP_CODE": "PA1510",
+"PICKUP_FULL_AUTOFILL": "PAPUA, MERAUKE, MUTING, SEED AGUNG (SEDAYU AGUNG PRASASTI)",
+"createdAt": "2022-09-23T08:21:10.243Z",
+"updatedAt": "2022-09-23T08:21:10.243Z",
+"__v": 0
+}
+}
+BODY PARAMETERS
+Field
+Type
+Description
+PICKUP_AUTOFILL
+String
+_id of address data from this route
+/address/search
+PICKUP_ADDRESS
+String
+Address text
+PICKUP_PIC_PHONE
+String
+Phone Number
+PICKUP_PIC
+String
+PIC Name
+PICKUP_NAME
+String
+Seller or Store Name
+pinpointData
+Object | null
+(optional) Pickup geolocation. Required when the address is
+used for a Pos Indonesia (pos) scheduled pickup.
+Send both pinpointData.lat and
+pinpointData.lng as numbers. Latitude must be
+between -90 and 90; longitude must be between -180 and 180.
+Send null or omit this field when no pinpoint is
+available.
+SHIPPER_ADDR1
+String
+(optional) If return address is different
+SHIPPER_AUTOFILL
+String
+(optional) _id of address data from this route
+/address/search
+SHIPPER_CONTACT
+String
+(optional)Seller or Store Name
+SHIPPER_PHONE
+String
+(optional) Phone Number
+_id
+String
+(optional) Use address id to update existed address
+get user's addresses
+# Here is a curl example
+curl \
+-X GET {BASE_URL}/api/public/{API_KEY}/address
+GET
+{BASE_URL}/api/public/{API_KEY}/address
+Result example :
+{
+"success": true,
+"data": [
+{
+"isHide": false,
+"dontIncludeSubdistrict": false,
+"isPlant": false,
+"_id": "632d6c76361422945dbaafd8",
+"PICKUP_AUTOFILL": "5fc63038f8f44b34aa4c1cc4",
+"PICKUP_ADDRESS": "Jl. Sederhana No. 142",
+"PICKUP_PIC_PHONE": "085270391495",
+"PICKUP_PIC": "PIC Name",
+"PICKUP_NAME": "Seller or Store Name",
+"user_id": "5fc6289532d4f232eb029ac8",
+"PICKUP_DISTRICT": "MUTING",
+"PICKUP_SUBDISTRICT": "SEED AGUNG (SEDAYU AGUNG PRASASTI)",
+"PICKUP_REGION": "PAPUA",
+"PICKUP_CITY": "MERAUKE",
+"PICKUP_CITY_SI": "Kab. Merauke",
+"PICKUP_ZIP": "99652",
+"PICKUP_DESTINATION_CODE": "DJJ20411",
+"PICKUP_DESTINATION_CODE_SI": "DJJ20411",
+"PICKUP_ORIGIN_CODE": "DJJ20400",
+"PICKUP_ORIGIN_CODE_SI": "MKQ",
+"PICKUP_SAP_CODE": "PA1510",
+"PICKUP_FULL_AUTOFILL": "PAPUA, MERAUKE, MUTING, SEED AGUNG (SEDAYU AGUNG PRASASTI)",
+"createdAt": "2022-09-23T08:21:10.243Z",
+"updatedAt": "2022-09-23T08:21:10.243Z",
+"__v": 0
+}
+]
+}
+Delete address
+Delete a single pickup address. Only addresses belonging to the
+authenticated user can be deleted. Same format as web mengantar for
+100% compatibility.
+# Here is a curl example
+curl -X DELETE '{BASE_URL}/api/public/{API_KEY}/address' \
+-H 'Content-Type: application/json' \
+-d '{
+"id": "632d6c76361422945dbaafd8"
+}'
+DELETE
+{BASE_URL}/api/public/{API_KEY}/address
+Result example :
+{
+"success": true,
+"data": {
+"isHide": false,
+"dontIncludeSubdistrict": false,
+"isPlant": false,
+"_id": "632d6c76361422945dbaafd8",
+"PICKUP_AUTOFILL": "5fc63038f8f44b34aa4c1cc4",
+"PICKUP_ADDRESS": "Jl. Sederhana No. 142",
+"PICKUP_PIC_PHONE": "085270391495",
+"PICKUP_PIC": "PIC Name",
+"PICKUP_NAME": "Seller or Store Name",
+"pinpointData": {
+"lat": -6.1755636,
+"lng": 106.8271706
+},
+"user_id": "5fc6289532d4f232eb029ac8",
+"PICKUP_DISTRICT": "MUTING",
+"PICKUP_SUBDISTRICT": "SEED AGUNG (SEDAYU AGUNG PRASASTI)",
+"PICKUP_REGION": "PAPUA",
+"PICKUP_CITY": "MERAUKE",
+"PICKUP_CITY_SI": "Kab. Merauke",
+"PICKUP_ZIP": "99652",
+"PICKUP_DESTINATION_CODE": "DJJ20411",
+"PICKUP_DESTINATION_CODE_SI": "DJJ20411",
+"PICKUP_ORIGIN_CODE": "DJJ20400",
+"PICKUP_ORIGIN_CODE_SI": "MKQ",
+"PICKUP_SAP_CODE": "PA1510",
+"PICKUP_FULL_AUTOFILL": "PAPUA, MERAUKE, MUTING, SEED AGUNG (SEDAYU AGUNG PRASASTI)",
+"createdAt": "2022-09-23T08:21:10.243Z",
+"updatedAt": "2022-09-23T08:21:10.243Z",
+"__v": 0
+}
+}
+BODY PARAMETERS
+Field
+Type
+Description
+id
+String
+Address ObjectId to delete. Must be a valid ObjectId.
+⚠ Warning:
+This action is permanent. Deleted addresses cannot be recovered.
+Make sure you intend to delete this address before executing this
+request.
+Update address
+Update a single pickup address by ID. Omit fields you don't want to
+change.
+# Here is a curl example
+curl -X PUT '{BASE_URL}/api/public/{API_KEY}/address/632d6c76361422945dbaafd8' \
+-H 'Content-Type: application/json' \
+-d '{
+"PICKUP_NAME": "Updated Warehouse Name",
+"PICKUP_PIC": "John Doe",
+"PICKUP_PIC_PHONE": "081234567890",
+"PICKUP_ADDRESS": "Jl. Sudirman No. 100"
+}'
+PUT
+{BASE_URL}/api/public/{API_KEY}/address/{id}
+Result example :
+{
+"success": true,
+"data": {
+"_id": "632d6c76361422945dbaafd8",
+"PICKUP_NAME": "Updated Warehouse Name",
+"PICKUP_PIC": "John Doe",
+"PICKUP_PIC_PHONE": "081234567890",
+"PICKUP_ADDRESS": "Jl. Sudirman No. 100",
+"PICKUP_CITY": "JAKARTA",
+"PICKUP_REGION": "JAWA BARAT",
+"PICKUP_DISTRICT": "JAKARTA SELATAN",
+"PICKUP_SUBDISTRICT": "KEBAYORAN BARU",
+"user_id": "5fc6289532d4f232eb029ac8",
+"createdAt": "2022-09-23T08:21:10.243Z",
+"updatedAt": "2026-08-24T15:30:00.000Z"
+}
+}
+URL PARAMETERS
+Field
+Type
+Description
+id
+String
+Address ObjectId to update. Must be valid ObjectId.
+BODY PARAMETERS
+Field
+Type
+Required
+Description
+PICKUP_NAME
+String
+No
+Store/warehouse name
+PICKUP_PIC
+String
+No
+Contact person name
+PICKUP_PIC_PHONE
+String
+No
+Contact person phone number (08... or +62...)
+PICKUP_ADDRESS
+String
+No
+Street address
+PICKUP_CITY
+String
+No
+City name
+PICKUP_REGION
+String
+No
+Province/region name
+PICKUP_DISTRICT
+String
+No
+District name
+PICKUP_SUBDISTRICT
+String
+No
+Sub-district name
+ℹ Partial Updates:
+Omit fields from the request body to keep them unchanged. For
+example, send only PICKUP_NAME to update the store
+name while keeping the PIC and phone number intact.
+add time
+# Here is a curl example
+curl \
+-X POST '{BASE_URL}/api/public/{API_KEY}/time' \
+-H 'Content-Type: application/json' \
+-d '{
+"address_id": "62e27d67ecf5ae2893bc070a",
+"date": "11-27-2022",
+"time": "13:00"
+}'
+Pickup time used in order creation POST
+{BASE_URL}/api/public/{API_KEY}/time
+Result example :
+{
+"success": true,
+"data": {
+"isSunday": false,
+"status": "empty",
+"_id": "6981621996f8fc74a332cf38",
+"date": "2026-02-03T00:00:00.000Z",
+"time": "13:00",
+"address": {
+"_id": "62e27d67ecf5ae2893bc070a",
+"PICKUP_NAME": "Seller or Store Name",
+"PICKUP_ADDRESS": "Jl. Sederhana No. 142",
+"PICKUP_CITY": "MERAUKE",
+"PICKUP_REGION": "PAPUA"
+}
+}
+}
+BODY PARAMETERS
+Field
+Type
+Description
+address_id
+String
+user's address _id
+date
+String
+mm-dd-yyyy format
+time
+String
+9:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00,
+18:00
+⚠ Note:
+The pickup schedule (date + time) must
+be at least 90 minutes from the current time. A
+request with a pickup time less than 90 minutes ahead will return
+an invalid pickup time error.
+get my users (assignee)
+# Here is a curl example
+curl \
+-X GET {BASE_URL}/api/public/{API_KEY}/my-users
+GET
+{BASE_URL}/api/public/{API_KEY}/my-users
+Result example :
+{
+"success": true,
+"data": [
+{
+"_id": "67d116f5b68d715ee586ab96",
+"name": "abbi",
+"email": "[email protected]"
+},
+{
+"_id": "67c58e190a9a21d23e220207",
+"name": "Udin Conello",
+"email": "[email protected]"
+},
+...
+]
+}
+get time
+# Here is a curl example
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/time'
+GET
+{BASE_URL}/api/public/{API_KEY}/time
+Result example :
+{
+"success": true,
+"data": [
+{
+"_id": "62e27d81ecf5ae2893bc070b",
+"date": 1677240000000,
+"time": "12:00"
+},
+{
+"_id": "62ea1fcaf0e12d8a980d8eb9",
+"date": 1703239200000,
+"time": "10:00"
+}
+]
+}
+Check Shipping Fee
+# Here is a curl example
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/order/estimate?origin_id=5fc62f5df8f44b34aa4c0d8c&destination_id=5fc64714f8f44b34aa4cdd60&courier=SiCepat&weight=1&COD_AMOUNT=123&isDangerousGoods=true'
+GET
+{BASE_URL}/api/public/{API_KEY}/order/estimate
+Result example :
+{
+"success": true,
+"data": {
+"price": 23000,
+"coverage_cod": false,
+"currency": "IDR",
+"discountPercent": 20,
+"discount": 4600,
+"codFee": 4,
+"estimatedPrice": 23004,
+"estimatedSpecialPrice": 18404,
+"unsupported_cod": false, // indicates if COD service is not supported for this area.
+"unsupported": false, // indicates if courier service is not available for this area.
+"isDangerousGoodsSupported": true // returned only when isDangerousGoods is enabled.
+}
+}
+QUERY PARAMETERS
+Field
+Type
+Description
+origin_id
+String
+_id of address data from this route
+/address/search
+destination_id
+String
+_id of address data from this route
+/address/search
+courier
+String
+The value should be "JNE" or "SiCepat" or "Sap" or "iDexpress"
+or "JT" or "lion" or "anteraja" or "pos" or "spx" or "all".
+The default value will be "JNE". For "all" value will return
+estimates for available couriers.
+weight
+Number
+(default: 1). Unit in kg(kilogram)
+COD_AMOUNT
+Number
+COD Amount = Goods Value + Shipping Fee. Used to calculate the
+COD service fee. For Shipping Fee, get the
+price from the response.
+isDangerousGoods
+Boolean
+(Optional, default: false). Use
+true or 1 to request the Dangerous
+Goods rate and destination coverage for the selected courier.
+⚠ Notes
+Ninja (discontinued 1 September 2026) —
+direct requests with courier=Ninja return HTTP 400,
+success: false,
+message: "Courier is not available", and
+code: "COURIER_DISABLED". With
+courier=all, Ninja,
+NinjaCargo are omitted. Historical order and batch
+read endpoints continue to accept these couriers.
+Possibilities for unsupported and unsupported_cod:
+if unsupported true and unsupported_cod
+true — CAN'T send to destination BOTH COD AND
+NON COD
+if unsupported true and unsupported_cod
+false — CAN'T send to destination BOTH COD AND
+NON COD
+if unsupported false and unsupported_cod
+true — can't send COD BUT still CAN send Non
+COD
+if unsupported false and unsupported_cod
+false — can send COD or Non COD
+Discount calculation is based on user's shipping volume, refer
+to
+Diskon Ongkos Kirim. Unlike /allEstimatePublic which has a fixed 20%
+discount.
+Pos Indonesia COD eligibility: COD requires a
+delivered rate of at least 82%. The rate is
+calculated across orders from all couriers created in the
+rolling 21–60 day window. If the rate remains
+below the threshold, a
+three-day grace period applies before Pos
+Indonesia COD is blocked. Non-COD service is not affected by
+this eligibility rule. For a DG request,
+isDangerousGoodsSupported indicates courier
+capability while unsupported indicates destination
+coverage. Check both fields before creating an order.
+SPX Express (spx) limits: maximum weight
+50 kg, maximum COD amount
+Rp5,000,000, maximum Non-COD goods value
+Rp10,000,000.
+Check Shipping Fee Public
+# Here is a curl example
+curl -X GET '{BASE_URL}/api/order/allEstimatePublic?origin_id=5fc62f5df8f44b34aa4c0d8c&destination_id=5fc64714f8f44b34aa4cdd60&weight=1&COD_AMOUNT=123&isDangerousGoods=true'
+GET
+{BASE_URL}/api/order/allEstimatePublic
+This api based on this page
+Cek Ongkos Kirim Mengantar
+Result example :
+{
+"success": true,
+"data": {
+"JT": {
+"unsupported": false,
+"unsupported_cod": false,
+"price": 21000,
+"estimate_delivery": "-",
+"discountPercent": 20,
+"cargoDiscountPercent": 0,
+"discount": 4200,
+"cargoDiscount": 0,
+"codFee": 4,
+"estimatedPrice": 21004,
+"estimatedSpecialPrice": 16804,
+"cargoEstimatedPrice": 0,
+"cargoEstimatedSpecialPrice": 0,
+"estimatedDate": "2-4 hari",
+"discountExtraPercent": 0,
+"discountExtra": 0,
+"cargoDiscountExtraPercent": 0,
+"cargoDiscountExtra": 0,
+"isDangerousGoodsSupported": true
+},
+...otherCouriers
+}
+}
+QUERY PARAMETERS
+Field
+Type
+Description
+origin_id
+String
+_id of address data from this route
+/address/search
+destination_id
+String
+_id of address data from this route
+/address/search
+weight
+Number
+(default: 1). Unit in kg(kilogram)
+COD_AMOUNT
+Number
+COD Amount = Goods Value + Shipping Fee. Used to calculate the
+COD service fee. For Shipping Fee, get the
+price from the response.
+isDangerousGoods
+Boolean
+(Optional, default: false). Use
+true or 1 to return DG rates,
+coverage, and isDangerousGoodsSupported for every
+courier.
+⚠ Notes
+This endpoint returns flat pricing —
+standardized prices with Mengantar's markup and discount
+structure applied. Discount is always 20% for all users.
+Ninja (discontinued 1 September 2026) —
+Ninja, NinjaCargo are omitted from the
+response.
+Possibilities for unsupported and unsupported_cod:
+if unsupported true and unsupported_cod
+true — CAN'T send to destination BOTH COD AND
+NON COD
+if unsupported true and unsupported_cod
+false — CAN'T send to destination BOTH COD AND
+NON COD
+if unsupported false and unsupported_cod
+true — can't send COD BUT still CAN send Non
+COD
+if unsupported false and unsupported_cod
+false — can send COD or Non COD
+For DG requests, supported regular couriers are
+SiCepat, SAP, IDExpress, and J&T. JNE, Lion
+Parcel, AnterAja, Pos Indonesia, and cargo/lite variants return
+isDangerousGoodsSupported: false.
+isDangerousGoodsSupported describes courier
+capability; always check unsupported separately for
+destination coverage. The field is omitted for regular requests.
+SPX Express (spx) limits: maximum weight
+50 kg, maximum COD amount
+Rp5,000,000, maximum Non-COD goods value
+Rp10,000,000.
+Check Shipping Fee 3PL
+# Here is a curl example
+curl -X GET '{BASE_URL}/api/order/allEstimate3PL?origin_id=5fc62de8f8f44b34aa4bdc49&destination_id=5fc64922f8f44b34aa4ce896&weight=1&isDangerousGoods=true'
+GET
+{BASE_URL}/api/order/allEstimate3PL
+3PL (Third Party Logistics) Endpoint: Standarized
+price Mengantar without any special promo or discount. Ideal for
+logistics partners and integrators who need raw courier rates but
+still using Mengantar.
+Result example :
+{
+"success": true,
+"data": {
+"JNE": {
+"unsupported": null,
+"unsupported_cod": null,
+"price": 14000,
+"estimatedDate": "1 - 2 days",
+"isDangerousGoodsSupported": false
+},
+"SiCepat": {
+"unsupported": false,
+"unsupported_cod": false,
+"price": 18000,
+"estimatedDate": "3 - 4 days",
+"isDangerousGoodsSupported": true
+}
+...otherCouriers
+}
+}
+QUERY PARAMETERS
+Field
+Type
+Description
+origin_id
+String
+_id of address data from this route
+/address/search
+destination_id
+String
+_id of address data from this route
+/address/search
+weight
+Number
+(default: 1). Unit in kg(kilogram)
+isDangerousGoods
+Boolean
+(Optional, default: false). Use
+true or 1 to return DG rates,
+coverage, and isDangerousGoodsSupported for every
+courier.
+⚠ Notes
+No Flat Pricing — prices are raw courier rates
+without Mengantar markup or discount.
+Ninja (discontinued 1 September 2026) —
+Ninja, NinjaCargo are omitted from the
+response.
+Possibilities for unsupported and unsupported_cod:
+if unsupported true and unsupported_cod
+true — CAN'T send to destination BOTH COD AND
+NON COD
+if unsupported true and unsupported_cod
+false — CAN'T send to destination BOTH COD AND
+NON COD
+if unsupported false and unsupported_cod
+true — can't send COD BUT still CAN send Non
+COD
+if unsupported false and unsupported_cod
+false — can send COD or Non COD
+minimumWeightCargo is shown only for couriers that
+support cargo shipments — indicates the minimum weight
+recommended for cargo orders.
+For DG requests, supported regular couriers are
+SiCepat, SAP, IDExpress, and J&T.
+isDangerousGoodsSupported is omitted when
+isDangerousGoods is false or not provided.
+Courier capability does not guarantee destination coverage;
+check unsupported before creating an order.
+SPX Express (spx) limits: maximum weight
+50 kg, maximum COD amount
+Rp5,000,000, maximum Non-COD goods value
+Rp10,000,000.
+Get Courier Performance
+# Here is a curl example
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/order/getPerformancePublic' \
+-H 'Content-Type: application/json' \
+-H 'Accept: application/json' \
+-d '{"city": "JEMBER", "allEstimateData": {"JNE": {"price": 23000, "unsupported": false}, "SiCepat": {"price": 18000, "unsupported": false}}}'
+POST
+{BASE_URL}/api/public/{API_KEY}/order/getPerformancePublic
+This api based on this page
+Cek Ongkos Kirim Mengantar
+Result example :
+{
+"success": true,
+"data": {
+"couriers": [
+{
+"key": "JNE",
+"score": 95
+},
+{
+"key": "SiCepat",
+"score": 100
+},
+{
+"key": "Sap",
+"score": 99
+},
+{
+"key": "iDexpress",
+"score": 97
+},
+{
+"key": "JT",
+"score": 98
+},
+{
+"key": "lion",
+"score": 96
+},
+{
+"key": "anteraja",
+"score": 0
+}
+],
+"bestCourier": "SiCepat",
+"recommended": "JNE"
+}
+}
+BODY PARAMETERS
+Field
+Type
+Description
+city
+String
+CITY_NAME of address data from this route
+/address/search
+allEstimateData
+Object
+response
+.data
+from this route
+/order/estimate
+with query
+courier=all or
+/order/allEstimatePublic. Get all of it and wrap as
+allEstimateData for
+this request.
+⚠ Note:
+This endpoint returns courier scores usually
+displayed alongside the courier estimate fee. Ninja (discontinued
+1 September 2026) are excluded from scores and recommendations,
+even if supplied in allEstimateData. Historical order
+and batch reads remain available for both couriers.
+🔒 Restricted access:
+This endpoint is limited to whitelisted accounts. Requests from
+an API key whose account is not on the whitelist get
+403 Not allowed. Access
+is granted on request: contact Mengantar Customer Service (CS) to
+request access.
+Sandbox: the whitelist is not applied there, so
+any sandbox API key can call this endpoint while you build your
+integration. The whitelist still applies once you move to
+production. Sandbox scores come from non-production data, so they
+may differ from the scores you get in production.
+Get Invoices and Balance
+# Here is a curl example
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/invoices?page=1&size=10'
+GET
+{BASE_URL}/api/public/{API_KEY}/invoices
+Result example :
+{
+"success": true,
+"data": [
+{
+"subItems": [],
+"status": "statusCleared",
+"courier": "system",
+"needToNotify": false,
+"adminCreated": false,
+"_id": "632c19f216b1eb234a8e7ebb",
+"user_id": "5fc6289532d4f232eb029ac8",
+"user": {
+"name": "Name",
+"email": "[email protected]"
+},
+"inv_number": "SS2209220816416",
+"expiration_date": "2022-09-24T08:16:00.000Z",
+"type": "typeWithdraw",
+"amount": 12345,
+"total": 12345,
+"createdAt": "2022-09-22T08:16:50.143Z",
+"updatedAt": "2022-09-22T08:21:07.344Z",
+"balanceAmount": 9635676,
+"userBalanceData": {
+"netValue": 30000000,
+"realNetValue": 0
+},
+"balance": 9635676,
+"api_req_id": "632c1aef994aea3981f68ae6",
+"api_req_message": "Success",
+"api_req_status": "DONE",
+"api_type": "oy",
+"paydAt": "2022-09-22T08:21:07.344Z"
+}
+],
+"count": 19,
+"balance": 9635676,
+"nextCursor": "MjAyMi0wOS0yMlQwODoxNjo1MC4xNDNafDYzMmMxOWYyMTZiMWViMjM0YThlN2ViYg"
+}
+QUERY PARAMETERS
+Field
+Type
+Description
+page
+Number
+Page number (default: 1, maximum: 100). Ignored when
+cursor is sent.
+size
+Number
+Number of records per page (default: 50, maximum: 100). A
+larger value is rejected with HTTP 400.
+cursor
+String
+Opaque value taken from nextCursor of the
+previous response. Returns the records that follow that page,
+newest first. Use it instead of page to read a
+long list; page, sort and
+asc are ignored when it is sent. An unrecognised
+value is rejected with HTTP 400.
+keyword
+String
+Search by invoice number, ORDER_ID, tracking number
+(cnote_no), or amount
+dateRange
+String (JSON)
+JSON object with startDate and
+endDate — e.g.
+{"startDate":"2024-01-01T00:00:00.000Z","endDate":"2024-01-31T23:59:59.999Z"}
+invoiceFilter
+String
+Filter by invoice type. Common values:
+typeWithdraw,
+typeAddBalance,
+typePayment,
+typeReconciliation,
+typeRefund. Omit or pass
+all to return all types.
+PAGINATION
+A page holds at most 100 records
+(size, default 50) and page goes up to
+100. Beyond that, or for any list longer than a few
+pages, read with cursor: send the
+nextCursor value of the previous response and repeat
+until it comes back empty. A cursor page is exact at any depth and
+costs the same whether it is the 2nd or the 500th.
+# First page
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/invoices?size=100'
+# Next page: pass nextCursor from the previous response
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/invoices?size=100&cursor=MjAyMi0wOS0xNVQw...'
+The response carries nextCursor: an opaque string for
+the next page, or an empty string when the page returned is the last
+one.
+Requests above the limits are rejected before any data is read:
+{ "success": false, "message": "size must not exceed 100; use cursor to fetch the next page" }
+{ "success": false, "message": "page must not exceed 100; use cursor (or dateRange) to go further back" }
+{ "success": false, "message": "Invalid cursor; send the nextCursor value from the previous response" }
+Add Dropshipper
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/dropshippers' \
+-H 'Content-Type: application/json' \
+-d '{
+"name": "Toko Partner",
+"phone": "081234567890"
+}'
+Creates a saved dropshipper for the account associated with the API
+Key. If an existing record has the same name and phone number (both
+exact match), that existing record is returned instead.
+POST
+{BASE_URL}/api/public/{API_KEY}/dropshippers
+This endpoint requires the API Key to have
+createOrder permission and the
+Dropshipper feature to be enabled for the account. A successful
+request returns HTTP 201, including
+when an existing record is returned.
+Result example:
+{
+"success": true,
+"data": {
+"id": "66ab1234567890abcdef1234",
+"name": "Toko Partner",
+"phone": "081234567890"
+}
+}
+BODY PARAMETERS
+Field
+Type
+Description
+name
+String
+Required. Non-empty dropshipper name. Leading and trailing
+whitespace is removed.
+phone
+String
+Required. Valid, non-empty dropshipper phone number. Leading
+and trailing whitespace is removed.
+ERROR RESPONSES
+Status
+Description
+400
+name or
+phone is missing, empty, or
+the phone number is invalid.
+401
+The API Key is invalid, is not associated with an active
+account, or does not have
+createOrder permission.
+403
+The Dropshipper feature is not enabled for the account.
+500
+The dropshipper could not be read or saved because of an
+internal error.
+Search Dropshipper
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/dropshippers?search=Toko&page=1&perPage=20'
+Searches saved dropshippers belonging to the account associated with
+the API Key by name or phone prefix. Matching is
+case-insensitive.
+GET
+{BASE_URL}/api/public/{API_KEY}/dropshippers
+For a multi-word search, the current implementation matches both the
+complete prefix and the first-word prefix, then prioritizes exact
+and closer name matches in the returned page. For example,
+search=Toko Partner can also return
+names beginning with Toko. This
+endpoint requires the API Key to have
+createOrder permission and the
+Dropshipper feature to be enabled.
+Result example:
+{
+"success": true,
+"data": [
+{
+"id": "66ab1234567890abcdef1234",
+"name": "Toko Partner",
+"phone": "081234567890"
+}
+],
+"pagination": { "page": 1, "perPage": 20 }
+}
+QUERY PARAMETERS
+Field
+Type
+Description
+search
+String
+Optional. Name or phone prefix. Matching is case-insensitive.
+URL-encode a leading plus sign as
+%2B.
+page
+Number
+Optional. Positive page number; defaults to 1 when omitted or
+invalid.
+perPage
+Number
+Optional. Positive number of records per request; defaults to
+20 when omitted or invalid. The maximum is 100; values above
+100 return HTTP 400.
+ERROR RESPONSES
+Status
+Description
+400
+perPage is greater than 100.
+401
+The API Key is invalid, is not associated with an active
+account, or does not have
+createOrder permission.
+403
+The Dropshipper feature is not enabled for the account.
+500
+The dropshipper list could not be read because of an internal
+error.
+Create Order
+# Here is a COD curl example
+curl --location '{BASE_URL}/api/public/{API_KEY}/order' \
+--header 'Content-Type: application/json' \
+--data '{
+"courier": "JNE",
+"pickup": {
+"type": "scheduledPickup",
+"volume": "volumeMotor",
+"address_id": "{ADDRESS_ID}",
+"time_id": "{TIME_ID}"
+},
+"orders": [
+{
+"assignee": "",
+"COD": 500000,
+"customerAddress": "Jalan Contoh No. 1",
+"customerName": "Customer COD",
+"customerAddressDataId": "5fc62deaf8f44b34aa4bdd62",
+"customerPhone": "081234567890",
+"parcelContent": "Baju",
+"destinationMark": "Destination Mark",
+"deliveryInstruction": "Delivery Instruction",
+"dontIncludeSubdistrict": false,
+"weight": 6,
+"quantity": 7,
+"customProducts": [
+{ "name": "Produk A", "variant": "75 ML", "qty": 2, "price": 50000, "weight": 1 },
+{ "name": "Produk B", "variant": "100 ML", "qty": 3, "price": 100000, "weight": 1 },
+{ "name": "Produk C", "variant": "15 ML", "qty": 2, "price": 25000, "weight": 0.5 }
+]
+}
+]
+}'
+# Here is a Non-COD curl example
+curl --location '{BASE_URL}/api/public/{API_KEY}/order' \
+--header 'Content-Type: application/json' \
+--data '{
+"courier": "JNE",
+"pickup": {
+"type": "scheduledPickup",
+"volume": "volumeMotor",
+"address_id": "{ADDRESS_ID}",
+"time_id": "{TIME_ID}"
+},
+"orders": [
+{
+"assignee": "",
+"goodsValue": 100000,
+"customerAddress": "Jalan Contoh No. 1",
+"customerName": "Customer Non-COD",
+"customerAddressDataId": "5fc62deaf8f44b34aa4bdd62",
+"customerPhone": "081234567890",
+"parcelContent": "Baju",
+"weight": 1,
+"quantity": 1
+}
+]
+}'
+# Here is a Dangerous Goods and a dropship order curl example. Obtain the saved reference from Add/Search Dropshipper first.
+curl --location '{BASE_URL}/api/public/{API_KEY}/order' \
+--header 'Content-Type: application/json' \
+--data '{
+"courier": "JNE",
+"pickup": {
+"type": "scheduledPickup",
+"volume": "volumeMotor",
+"address_id": "{ADDRESS_ID}",
+"time_id": "{TIME_ID}"
+},
+"orders": [
+{
+"goodsValue": 100000,
+"customerAddress": "Jalan Contoh No. 1",
+"customerName": "Customer Dropship",
+"customerAddressDataId": "5fc62deaf8f44b34aa4bdd62",
+"customerPhone": "081234567890",
+"parcelContent": "Baju",
+"weight": 1,
+"quantity": 1,
+isDangerousGoods": true,
+"dropShipper": {
+"id": "66ab1234567890abcdef1234",
+"name": "Toko Partner",
+"phone": "081234567890"
+}
+}
+]
+}'
+POST
+{BASE_URL}/api/public/{API_KEY}/order
+If the balance is insufficient, the API creates the order with
+isPaid: false and cnote_no: null.
+To create a dropship order, add the optional
+dropShipper object to each applicable item in
+orders. The dropshipper must already exist in the
+account's saved master; Create Order never creates a master
+dropshipper automatically. Orders without this object continue to
+use the seller identity.
+Dropshipper validation runs for the complete batch before any order
+is created. If one item has an invalid reference or mismatched
+name/phone, the complete request is rejected and the response
+identifies the invalid order item.
+Result example :
+{
+"success": true,
+"data": [
+{
+"COD_AMOUNT": 0,
+"isPaid": true,
+"isPreviouslyError": false,
+"cargo": false,
+"isDangerousGoods": false,
+"queueStatus": "COMPLETED",
+"_id": "697c58034fa61abe7c700da9",
+"createdDate": "2026-01-30T07:04:37.499Z",
+"batch_id": "697c58034fa61abe7c700da6",
+"batch": "26013014BBQFMM",
+"dropShipperId": "66ab1234567890abcdef1234",
+"dropShipper": {
+"id": "66ab1234567890abcdef1234",
+"name": "Toko Partner",
+"phone": "081234567890"
+},
+"createdAt": "2026-01-30T07:04:35.398Z",
+"GOODS_AMOUNT": 100000,
+"ORDER_ID": "260130OVBBOO",
+"PICKUP_ADDRESS": "Jalan Toko No. 1",
+"PICKUP_CITY": "BANDUNG",
+"PICKUP_DATE": "2026-06-01",
+"PICKUP_DISTRICT": "BANDUNG WETAN",
+"PICKUP_NAME": "Toko Partner",
+"PICKUP_PIC_PHONE": "081234567890",
+"PICKUP_REGION": "JAWA BARAT",
+"PICKUP_TIME": "12:00:00",
+"SERVICE_CODE": "REG",
+"WEIGHT": 1,
+"cnote_no": "11000009548385",
+"discount": 1600,
+"error": null,
+"estimate_delivery": "2 - 4 Day",
+"estimatedPrice": 8000,
+"estimatedSpecialPrice": 5600,
+"formulir_order_id": "",
+"isReconciliated": false,
+"status": "active",
+"statusCategory": "active"
+},
+{
+"COD_AMOUNT": 500000,
+"isPaid": true,
+"isPreviouslyError": false,
+"cargo": false,
+"queueStatus": "COMPLETED",
+"_id": "697c58034fa61abe7c700da8",
+"createdDate": "2026-01-30T07:04:35.499Z",
+"batch_id": "697c58034fa61abe7c700da6",
+"batch": "26013014BBQFMM",
+"createdAt": "2026-01-30T07:04:35.398Z",
+"COD_FEE": 3329.99,
+"GOODS_AMOUNT": 100000,
+"ORDER_ID": "260130F0DRQH",
+"PICKUP_ADDRESS": "Jalan Toko No. 1",
+"PICKUP_CITY": "BANDUNG",
+"PICKUP_DATE": "2026-06-01",
+"PICKUP_DISTRICT": "BANDUNG WETAN",
+"PICKUP_NAME": "Toko Contoh",
+"PICKUP_PIC_PHONE": "081234567890",
+"PICKUP_REGION": "JAWA BARAT",
+"PICKUP_TIME": "12:00:00",
+"SERVICE_CODE": "REG",
+"WEIGHT": 1,
+"cnote_no": "11000009548396",
+"discount": 1600,
+"error": null,
+"estimate_delivery": "2 - 4 Day",
+"estimatedPrice": 11329,
+"estimatedSpecialPrice": 8929,
+"formulir_order_id": "",
+"status": "active",
+"statusCategory": "active"
+}
+],
+"batch": "26013014BBQFMM",
+"batch_id": "697c58034fa61abe7c700da6",
+"courier": "JNE",
+"jneOrdersUnsuported": null,
+"ordersClosedDestination": [],
+"errors": []
+}
+BODY PARAMETERS
+Field
+Type
+Description
+courier
+String
+The value should be "JNE" or "SiCepat" or "Sap" or "iDexpress"
+or "JT" or "lion" or "anteraja" or "pos" or "spx". Dropshipper
+identity and reference are applied consistently to all
+supported couriers.
+"Ninja" is discontinued from 1 September 2026
+and can no longer be used to create an order.
+assignee
+String
+(Optional) The value should be user_id (_id) from
+Get Assignee API.
+pickup
+Object
+Pickup data
+pickup.address_id
+String
+User's address _id
+pickup.type
+String
+scheduledPickup, dropOff
+For "spx": dropOff is only
+accepted when SPX Drop Off is enabled for your account;
+otherwise the request is rejected and you should use
+scheduledPickup or contact admin.
+pickup.time_id
+String
+time _id (required for type 'scheduledPickup').
+For "spx": the date/time this
+time_id resolves to is checked against SPX's own
+live pickup slots for that day before the order is created.
+Available slots change per day, so a date/time outside every
+open slot is rejected with the slots that are actually
+available that day.
+pickup.volume
+String
+volumeTruck, volumeMobil, volumeMotor (required for type
+'scheduledPickup')
+orders
+Array
+Array of orders objects
+orders.goodsValue
+Number
+Goods value (required for non-COD orders).
+orders.COD
+Number
+COD value = Goods Value + Shipping Fee + COD Fee (required if
+goodsValue is empty).
+orders.customerAddressDataId
+String
+_if from /api/address/search
+orders.customerAddress
+String
+Customer Address
+orders.customerName
+String
+Customer Name
+orders.customerPhone
+String
+Customer Phone Number (10–15 digits, no spaces or dashes)
+orders.weight
+Number
+The total weight in kg. If
+orders.customProducts contains valid items, this
+value must equal the sum of qty × weight for all
+items (matching the in-app product list logic).
+orders.quantity
+Number
+Quantity. If orders.customProducts contains valid
+items, this value must equal the sum of each line quantity
+(qty / orderQuantity) for all items
+(matching the in-app product list logic).
+orders.dropShipper
+Object
+Optional per order item. References an existing saved
+dropshipper. It may be omitted for regular seller orders,
+including in a mixed batch.
+orders.dropShipper.id
+String
+Required when dropShipper is provided. Saved
+dropshipper ID from Add/Search Dropshipper.
+orders.dropShipper.name
+String
+Required when dropShipper is provided. Must match
+the saved dropshipper.
+orders.dropShipper.phone
+String
+Required when dropShipper is provided. Must match
+the saved dropshipper.
+orders.parcelContent
+String
+Parcel Content / Product Name
+orders.customProducts
+Array<Object>
+(Optional) Manual product lines; stored like in-app Tambah
+Manual (productOrder collection). Currently supported only
+when courier is JNE, SiCepat, Sap, or JNT.
+orders.customProducts[].name
+String
+Product name (required when customProducts is provided)
+orders.customProducts[].variant
+String/Object
+(Optional) Variant text shown in label product table
+orders.customProducts[].qty
+Number
+Quantity. Alias accepted: quantity, orderQuantity
+orders.customProducts[].price
+Number
+(Optional) Product price. Alias accepted: harga, regularPrice
+orders.customProducts[].weight
+Number
+(Optional) Product weight in kg. Default to 1 if omitted
+orders.destinationMark
+String
+(Optional)
+orders.deliveryInstruction
+String
+(Optional)
+orders.dontIncludeSubdistrict
+Boolean
+(Optional)
+orders.cargo
+Boolean
+(Optional) if true then it will proceed with Cargo type.
+Couriers that have cargo option: (JNE, SiCepat, Sap,
+iDexpress)
+orders.isDangerousGoods
+Boolean
+(Optional, default: false). Set to
+true to create a Dangerous Goods order. The value
+must be a JSON Boolean, not a string. Supported couriers are
+JT, SiCepat, and
+iDexpress.
+DROPSHIPPER VALIDATION RESPONSES
+HTTP status
+Condition
+200
+The order batch was created. Every dropship order includes
+dropShipperId and the matching
+dropShipper reference in its response item.
+400
+A dropshipper field is missing, the ID is invalid or not owned
+by the API Key account, or the submitted name/phone does not
+exactly match the saved master. No order in the batch is
+created.
+403
+The account's Dropshipper feature is disabled. No order in the
+batch is created.
+500
+Dropshipper validation could not be completed because of an
+internal error. No order is dispatched.
+Invalid dropshipper example (HTTP 400):
+{
+"success": false,
+"message": "Invalid dropshipper data",
+"errors": [
+{
+"order": 1,
+"path": "orders[0].dropShipper",
+"message": "name or phone does not match the saved dropshipper"
+}
+]
+}
+IDEMPOTENCY KEY (OPTIONAL)
+A create order request can time out on your side while Mengantar is
+still creating the batch. Retrying it then creates the same orders a
+second time. To retry safely, send the
+idempotencyKey header with a reference from your own
+system for this request, for example your order or batch number, and
+send the same value again on every retry of that request.
+curl --location '{BASE_URL}/api/public/{API_KEY}/order' \
+--header 'Content-Type: application/json' \
+--header 'idempotencyKey: INV-2026-0001' \
+--data '{ ...same body as above... }'
+Header
+Type
+Description
+idempotencyKey
+String
+(Optional). 1–50 characters; leading and trailing spaces
+are ignored. A key is remembered for 24 hours
+from the first request that used it, per API Key account: the
+same key from another account is unrelated. Without this
+header the request is processed exactly as before. It is read
+from the header only, never from the body, and is ignored on a
+validate request.
+Two requests are the same request when they carry the same key and
+the same body (the order of JSON fields does not matter).
+HTTP status
+Condition
+Same as the first request
+The key was already used with the same body and that request
+has finished. The first response is returned again, with the
+same batch, batch_id and per-order
+results, and no new batch or order is created. The response
+carries the header Idempotent-Replayed: true and
+the field "idempotentReplayed": true. The orders
+are as they were when first created; use
+GET /order for their current status. This applies
+to a first request that failed with a 5xx too: it may have
+created part of the batch, so it is not run again.
+400
+code: IDEMPOTENCY_KEY_INVALID. The header is empty
+or longer than 50 characters. No batch is created.
+409
+code: IDEMPOTENCY_REQUEST_IN_PROGRESS. The first
+request with this key is still being processed. No batch is
+created. Retry with the same key after the number of seconds
+in the Retry-After header to get its result.
+409
+code: IDEMPOTENCY_REQUEST_UNRESOLVED. The first
+request with this key never finished. It may have created some
+orders, so it is not run again: check GET /order
+and send any missing orders with a new key.
+422
+code: IDEMPOTENCY_KEY_REUSED. The key was already
+used for a request with a different body. No batch is created.
+503
+code: IDEMPOTENCY_UNAVAILABLE. The key could not
+be checked. No batch is created; retry with the same key.
+When the first request is rejected with a 4xx before any order is
+created (for example a validation error), the key is released: fix
+the body and send it again with the same key.
+A replay is a copy of the first response, not the current state of
+its orders. Deleting the batch or its orders (see
+Delete Batch) does not release
+the key: sending the same key again still returns the old response,
+with "idempotentReplayed": true and the old
+batch_id and AWB numbers, and no new order is created.
+To create the orders again after a delete, send them with a
+new key. Use GET /order to check
+whether the orders are still active.
+Recommended retry flow
+Send the request with idempotencyKey set to your own
+reference, for example INV-2026-0001.
+If the connection times out or drops, send the
+exact same body again with the
+same key. Do not regenerate values that change on
+every call (timestamps, random IDs), or the retry is seen as a
+different request.
+On 409 IDEMPOTENCY_REQUEST_IN_PROGRESS, wait for the
+Retry-After seconds and retry with the same key.
+Stop when you get the batch back (a first response, or a replay
+with "idempotentReplayed": true).
+On a replayed 5xx or
+409 IDEMPOTENCY_REQUEST_UNRESOLVED, check
+GET /order first, then send only the missing orders
+with a new key.
+Replayed result, same key and same body after the first request finished (HTTP 200).
+Response header: Idempotent-Replayed: true
+{
+"success": true,
+"data": [
+{
+"_id": "697c58034fa61abe7c700da9",
+"batch_id": "697c58034fa61abe7c700da6",
+"batch": "26013014BBQFMM",
+"ORDER_ID": "260130OVBBOO",
+"cnote_no": "11000009548385",
+...same order fields as the first response...
+}
+],
+"batch": "26013014BBQFMM",
+"batch_id": "697c58034fa61abe7c700da6",
+"courier": "JNE",
+"errors": [],
+"idempotentReplayed": true
+}
+First request still being processed (HTTP 409).
+Response header: Retry-After: 10
+{
+"success": false,
+"code": "IDEMPOTENCY_REQUEST_IN_PROGRESS",
+"message": "The earlier request with this idempotencyKey is still being processed, retry later"
+}
+First request never finished (HTTP 409):
+{
+"success": false,
+"code": "IDEMPOTENCY_REQUEST_UNRESOLVED",
+"message": "The earlier request with this idempotencyKey did not finish. Check GET /order for orders it created before sending them again with a new idempotencyKey"
+}
+Replayed server error, the first request failed with a 5xx (HTTP 500).
+Response header: Idempotent-Replayed: true
+{
+"success": false,
+"message": "Error on createOrderFunction",
+"idempotentReplayed": true
+}
+Key reused with a different body (HTTP 422):
+{
+"success": false,
+"code": "IDEMPOTENCY_KEY_REUSED",
+"message": "idempotencyKey has already been used for a different request"
+}
+Invalid key (HTTP 400):
+{
+"success": false,
+"code": "IDEMPOTENCY_KEY_INVALID",
+"message": "idempotencyKey header must not exceed 50 characters"
+}
+Key could not be checked, nothing was created (HTTP 503):
+{
+"success": false,
+"code": "IDEMPOTENCY_UNAVAILABLE",
+"message": "Order could not be processed right now, please retry with the same idempotencyKey"
+}
+Dangerous Goods
+Before creating a DG order, call a shipping estimate endpoint with
+isDangerousGoods=true. Proceed only when
+isDangerousGoodsSupported is true and
+unsupported is false.
+Courier
+Create Order DG
+Service
+SiCepat
+true
+HALU
+IDExpress (iDexpress)
+true
+Regular service
+Validation errors return HTTP 400:
+{
+"success": false,
+"message": "orders[0].isDangerousGoods must be a boolean"
+}
+Dangerous goods cannot be combined with cargo service
+Dangerous goods service is not supported by courier
+{courier}
+Dangerous goods service is not available for destination of
+orders[{index}]
+⚠ Dropshipper:
+Enable the Dropshipper feature through Seller Web before using
+Add, Search, or Create Order with dropShipper. The
+canonical name and phone from the saved master become the shipment
+and label sender identity. The pickup address remains the seller
+address selected in the request and the saved pickup master is not
+modified. In mixed batches, regular orders keep the seller
+identity and never inherit dropshipper data from another
+item.
+⚠ Note:
+For non-COD orders, make sure your Mengantar balance is
+sufficient before creating an order. If the balance is
+insufficient, the order is still created with
+isPaid: false and cnote_no: null (the
+shipping fee has not been charged yet). After topping up your
+balance, complete the payment using the
+Pay Unpaid Order API — the
+cnote_no will then be generated.
+⚠ Sandbox: To add balance,
+use the Top Up Saldo feature in the Mengantar
+app, then complete the payment via the Midtrans sandbox payment
+simulator:
+https://simulator.sandbox.midtrans.com/
+Pos Indonesia (pos)
+Use the exact lowercase courier value pos. For a
+scheduled pickup, the selected pickup address must contain valid
+pinpointData.lat and pinpointData.lng.
+Pos Indonesia COD requires a delivered rate of at least
+82%, calculated from orders created during the
+rolling 21–60 day period across all couriers. COD
+is blocked once the last three evaluation periods are all below
+the threshold. Non-COD orders remain available.
+COD eligibility statuses:
+Blocked (403 Forbidden response): The
+status field indicates the reason COD is blocked. All
+three statuses return the same generic message; use the
+status field to distinguish the reason:
+new_seller: The account has no shipping history
+yet — no parcels, or none delivered. COD blocked.
+deliveredRate is 0 (no shipping
+history yet).
+insufficient: Not enough data to evaluate yet:
+no rate period has been generated, the latest period spans fewer
+than 21 days, or it contains no parcels. This is not a
+performance issue. COD blocked. deliveredRate shows
+the account's overall delivered rate, which does not reflect the
+evaluation period.
+blocked: All of the last three evaluation
+periods are below 82%. COD blocked.
+deliveredRate shows actual rate (e.g., 70%).
+Available (200 OK): When one of the following
+statuses is returned, the order succeeds normally without a 403
+response:
+eligible: The latest evaluation period has a
+delivered rate of 82% or above. COD available.
+warning: The latest period is below 82%, but
+not all of the last three periods are. COD still available.
+deliveredRate shows actual rate (e.g., 75%).
+Example: new_seller status
+{
+"success": false,
+"message": "Pos Indonesia COD is not available for this account",
+"status": "new_seller",
+"deliveredRate": 0,
+"minimumDeliveredRate": 82
+}
+Example: insufficient status
+{
+"success": false,
+"message": "Pos Indonesia COD is not available for this account",
+"status": "insufficient",
+"deliveredRate": 40,
+"minimumDeliveredRate": 82
+}
+Example: blocked status
+{
+"success": false,
+"message": "Pos Indonesia COD is not available for this account",
+"status": "blocked",
+"deliveredRate": 70,
+"minimumDeliveredRate": 82
+}
+⚠ Ninja — discontinued from 1 September 2026
+Starting 1 September 2026, Ninja can
+no longer be used to create an order, and it is no longer returned
+by the
+Check Shipping Fee endpoints.
+Orders and batches created before the cut-off are not affected and
+can still be retrieved and tracked through
+Get orders and
+Get batches.
+Enforcement is still being rolled out, so a
+Ninja request may still succeed for a short period —
+do not rely on it. Please move the affected
+shipments to another courier.
+⚠ Important — JT Premium & SiCepat: Batch Concurrency
+For couriers where the tracking number (cnote_no /
+resi) is generated on our side — currently
+JT Premium and SiCepat — the
+system assigns numbers sequentially per account. To ensure
+tracking numbers are unique and correctly assigned,
+only one batch can be processed at a time per account.
+Do not send multiple batch requests concurrently
+(e.g. firing several API calls in parallel from your system).
+Instead, group all orders into a single batch and send them in one
+request.
+If a concurrent request is detected (JT Premium), the API will
+respond with:
+{
+"success": false,
+"message": "Sedang ada proses pembuatan order JT Premium yang berjalan. Mohon gabungkan semua order dalam 1 batch yang sama daripada mengirim beberapa batch secara bersamaan."
+}
+HTTP status: 409 Conflict
+SPX Express (spx)
+Use the exact lowercase courier value spx. In the
+sandbox environment, SPX orders only accept a
+Jakarta origin (pickup address) for testing
+purposes; any other origin is rejected, and some destinations that
+SPX supports in production are rejected too. See the sandbox-only
+known errors below. These limitations do not apply in production.
+dropOff is only available for accounts with SPX Drop
+Off enabled — contact admin to enable it. See
+pickup.time_id above for how the pickup slot is
+validated against SPX's own live schedule.
+⚠ Sandbox-only known errors
+The following error messages may appear when testing in the
+sandbox environment due to limitations of the courier dev APIs.
+They do not occur in production under normal usage.
+Courier
+Message
+Cause & Action
+JNE
+Content not confirm our security Policy.
+This is a known sandbox limitation on JNE's side. The
+sandbox requires the
+pickup address to be in Jakarta — the
+destination can be anywhere. It does not occur in
+production.
+SAP
+Service tidak ditemukan dalam kontrak
+This is a known sandbox limitation on SAP's side. SAP's
+sandbox API key only supports
+non-COD orders with
+Jakarta → Jakarta routes. It does not
+occur in production.
+SPX
+station not FIRST_MILE_HUB or DC or AM_HUB, or station
+not InOperation, or no match pickupStationId
+This is a known sandbox limitation on SPX's side. The SPX
+sandbox only accepts a Jakarta origin
+(pickup address); any other origin has no pickup station,
+so the order fails. Use a pickup address in
+Jakarta. It does not occur in production.
+SPX
+buyer address not support delivery
+This is a known sandbox limitation on SPX's side. The SPX
+sandbox covers fewer destinations than production. Use a
+destination in Jakarta for testing. It
+does not occur in production.
+Pay Unpaid
+# Here is a curl example
+curl \
+-X POST '{BASE_URL}/api/public/{API_KEY}/order/pay-unpaid' \
+-H 'Content-Type: application/json' \
+-d '{
+"courier": "Sap",
+"batch_id": "6332f5b98c3ea4bc8e15f72d"
+}'
+POST
+{BASE_URL}/api/public/{API_KEY}/order/pay-unpaid
+Returns the number of orders that were paid in data and
+their tracking numbers in cnote_no.
+Result example :
+{
+"success": true,
+"data": 2,
+"cnote_no": ["DMP00097790689", "DMP00097790690"]
+}
+BODY PARAMETERS
+Field
+Type
+Description
+courier
+String
+Courier used by the batch. The value should be "JNE",
+"SiCepat", "Sap", "iDexpress", "JT", "lion", "anteraja",
+"pos", or "spx". Optional for JNE (the default); required for
+other couriers.
+"Ninja" is discontinued from 1 September 2026
+and can no longer be paid through this endpoint. Completing
+payment for an unpaid Ninja order generates its tracking
+number (cnote_no) — that is, it creates the
+shipment — so it falls under the same restriction as
+Create Order. Please contact
+Mengantar support for any unpaid Ninja orders left over from
+before the cut-off.
+batch_id
+String
+Batch _id (required)
+Get orders
+# Here is a curl example
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/order?page=1&size=50&dateRange={"startDate":"2021-09-23T00:00:00.000Z","endDate":"2022-09-23T23:59:59.999Z"}&courier=Sap&cod=NON_COD&status={"DELIVERED_PENDING":true,"DELIVERED_COMPLETED":true,"RTS":true}'
+GET
+{BASE_URL}/api/public/{API_KEY}/order
+Result example :
+{
+"success": true,
+"data": [
+{
+"assignee": null,
+"receiverScore": {
+"delivered": 0,
+"rts": 0,
+"undelivered": 0,
+"rate": 0
+},
+"isBreach": false,
+"COD_AMOUNT": 1123123,
+"status": "active",
+"isDeleted": false,
+"ticketStatus": "none",
+"printedDates": [
+"2022-09-15T10:30:37.562Z"
+],
+"_id": "6322e2b3e120e6fdd6094d5b",
+"destinationMark": "",
+"ORDER_ID": "2209155C0E35",
+"SHIPPER_NAME": "address",
+"SHIPPER_CONTACT": "address",
+"RECEIVER_NAME": "12312",
+"RECEIVER_ADDR1": "12312",
+"RECEIVER_ADDR2": "",
+"RECEIVER_ADDR3": "",
+"RECEIVER_CITY": "SAMPANG",
+"RECEIVER_REGION": "JAWA TIMUR",
+"RECEIVER_PHONE": "123123",
+"ORIGIN_CODE": "CGK10000",
+"DESTINATION_CODE": "JI2401",
+"GOODS_DESC": "123123",
+"GOODS_AMOUNT": "150000", // Parcel Value
+"RECEIVER_SUBDISTRICT": "BANYUATES",
+"RECEIVER_DISTRICT": "BANYUATES",
+"cnote_no": "0137812206123519",
+"user_id": "5fc6289532d4f232eb029ac8",
+"user": {
+"email": "[email protected]",
+"name": "Name"
+},
+"batch": "22091515CCED71",
+"lastStatusChange": "2022-09-15T15:30:00.000Z",
+"receiver_id": "62fca167ad74ee28aa6ca3f6",
+"dropShipperId": "6a843f061166855a30538e47",
+"dropShipper": {
+"id": "6a843f061166855a30538e47",
+"name": "Toko Partner",
+"phone": "081234567890"
+},
+"createdAt": "2022-09-15T08:30:43.310Z"
+},
+],
+"nextCursor": "MjAyMi0wOS0xNVQwODozMDo0My4zMTBafDYzMjJlMmIzZTEyMGU2ZmRkNjA5NGQ1Yg"
+}
+RESPONSE FIELDS
+dropShipperId: ID dari dropshipper
+dropShipper: Object referensi dropshipper dengan
+struktur:
+id — ID dropshipper
+name — Nama toko/dropshipper
+phone — Nomor telepon dropshipper
+⚠ Note:
+Kedua field ini (dropShipperId dan
+dropShipper) hanya muncul pada order yang dibuat
+dengan dropshipper. Order regular (tanpa dropshipper) tidak akan
+memiliki field ini.
+QUERY PARAMETERS
+Field
+Type
+Description
+page
+Number
+Page number (default: 1, maximum: 100). Ignored when
+cursor is sent.
+size
+Number
+Orders count per page (default: 50, maximum: 100). A larger
+value is rejected with HTTP 400.
+cursor
+String
+Opaque value taken from nextCursor of the
+previous response. Returns the records that follow that page,
+newest first. Use it instead of page to read a
+long list; page, sort and
+asc are ignored when it is sent. An unrecognised
+value is rejected with HTTP 400.
+courier
+String
+The value should be "JNE" or "SiCepat" or "Sap" or "iDexpress"
+or "JT" or "Ninja" or "lion" or "anteraja" or "pos" or "spx".
+Ninja stays valid here for reading data created
+before 1 September 2026.
+cod
+String
+COD or
+NON_COD
+status
+String (JSON)
+JSON object (as string) with status keys set to
+true, e.g.
+{"DELIVERED_PENDING":true,"DELIVERED_COMPLETED":true,"RTS":true}
+dateRange.startDate
+Date
+ISO date string — e.g.
+2021-09-23T00:00:00.000Z
+dateRange.endDate
+Date
+ISO date string — e.g.
+2022-09-23T23:59:59.999Z
+batch
+String
+Batch _id
+tracking_id
+String
+Tracking number (cnote_no) — returns single order with full
+history
+order_id
+String
+ORDER_ID — returns single order with full
+history
+PAGINATION
+A page holds at most 100 records
+(size, default 50) and page goes up to
+100. Beyond that, or for any list longer than a few
+pages, read with cursor: send the
+nextCursor value of the previous response and repeat
+until it comes back empty. A cursor page is exact at any depth and
+costs the same whether it is the 2nd or the 500th.
+# First page
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/order?size=100'
+# Next page: pass nextCursor from the previous response
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/order?size=100&cursor=MjAyMi0wOS0xNVQw...'
+The response carries nextCursor: an opaque string for
+the next page, or an empty string when the page returned is the last
+one.
+Without dateRange the list covers orders that have not
+been archived yet (roughly the last 6 months), across the couriers
+your account has orders in. To read older orders, send a
+dateRange that covers them. Looking up a single order
+by order_id or tracking_id always searches
+the archive as well.
+Without courier the page is merged across every courier
+your account uses, so page × size may not
+exceed 1,500 there (page 15 at size 100, page 30 at
+size 50). To go further back, name a courier or use
+cursor. The same ceiling applies to a single courier
+when the dateRange starts more than six months back (or
+a lookup sends no dateRange), because such a page is
+merged from current and archived orders.
+Requests above the limits are rejected before any data is read:
+{ "success": false, "message": "size must not exceed 100; use cursor to fetch the next page" }
+{ "success": false, "message": "page must not exceed 100; use cursor (or dateRange) to go further back" }
+{ "success": false, "message": "page x size must not exceed 1500 without courier; send courier or use cursor to go further back" }
+{ "success": false, "message": "page x size must not exceed 1500 when the date range reaches the archive; use cursor to go further back" }
+{ "success": false, "message": "Invalid cursor; send the nextCursor value from the previous response" }
+Tracking History
+When fetching a single order via
+tracking_id or
+order_id, the order object includes
+a history array containing the full
+courier status history. This field is
+not returned in list responses — only when looking
+up a specific order.
+// Response when using ?tracking_id=... or ?order_id=...
+// history is a field inside the order object, not a separate response
+{
+"success": true,
+"data": [
+{
+"_id": "6332f5ba8c3ea4bc8e15f72e",
+"cnote_no": "DMP00097790689",
+"status": "active",
+...
+"history": [
+{
+"date": "27-09-2022 08:30",
+"desc": "Order Created"
+},
+{
+"date": "27-09-2022 12:00",
+"desc": "Shipment Picked Up By Courier"
+},
+{
+"date": "28-09-2022 09:45",
+"desc": "Delivered To Customer"
+}
+]
+}
+]
+}
+Field
+Type
+Description
+history[].date
+String
+Status timestamp in
+DD-MM-YYYY HH:mm format
+(Asia/Jakarta timezone)
+history[].desc
+String
+Human-readable status description
+⚠ Note:
+Tracking history is sourced from third-party couriers, so the
+entries vary per courier. The fields documented here
+(date, desc) are the common ones present
+across couriers; the desc text is provided by each
+courier and its wording may differ between them.
+Order Status
+Status response of the third-party expedition in order, if you want
+to simplify, you can only know the status of DELIVERED,
+RTS, and other than that is ON GOING.
+For the full list of courier status codes and their meanings, refer
+to the
+Order Status Reference Sheet.
+Simulate Order Status (Sandbox)
+⚠ Sandbox only:
+This endpoint only exists when the deployment runs in sandbox
+mode. Calling the same path in production always returns
+404 Not Found, even with a valid API key.
+Lets you move one of your own sandbox orders straight to a canonical
+status (ON DELIVERY, DELIVERED, or
+RTS) without waiting for a real courier callback, so
+you can run a deterministic end-to-end test (create order →
+simulate status → read order/history) against the sandbox
+instead of depending on real courier movement.
+If your account has a Webhook URL set, each successful call also
+delivers one webhook with the new status to that URL — see
+Webhook. The status change is saved
+whether or not that delivery succeeds.
+# Here is a curl example
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/order/simulation' \
+-H 'Content-Type: application/json' \
+-d '{
+"courier": "JNE",
+"orderId": "240429Q34UPQ",
+"statusCategory": "ON DELIVERY"
+}'
+# Or identify the order by its tracking number instead of orderId
+# (send exactly one of orderId / trackingId)
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/order/simulation' \
+-H 'Content-Type: application/json' \
+-d '{
+"courier": "spx",
+"trackingId": "SPXID000000000000",
+"statusCategory": "DELIVERED"
+}'
+POST
+{BASE_URL}/api/public/{API_KEY}/order/simulation
+{API_KEY} is a normal Public API key with the
+Check order status
+permission — no separate simulation permission exists.
+BODY PARAMETERS
+Field
+Type
+Required
+Description
+courier
+String
+Yes
+One of JNE, SiCepat,
+Sap, iDexpress, JT,
+lion, anteraja, pos,
+spx. Ninja is not supported for
+simulation.
+orderId
+String
+Exactly one of orderId / trackingId
+Matches the order's ORDER_ID.
+trackingId
+String
+Exactly one of orderId / trackingId
+Matches the order's cnote_no.
+statusCategory
+String
+Exactly one of statusCategory /
+status
+Canonical target: ON DELIVERY,
+DELIVERED, or RTS.
+status
+String
+Exactly one of statusCategory /
+status
+Same canonical enum as statusCategory — either
+field selects the same target status.
+Result example : (200 OK)
+{
+"success": true,
+"data": {
+"orderId": "ORDER-1",
+"trackingNumber": "JNE00000001",
+"courier": "JNE",
+"previousStatus": "PICKED UP",
+"previousStatusCategory": "PICKED UP",
+"status": "ON DELIVERY",
+"statusCategory": "ON DELIVERY",
+"lastStatusChange": "2026-09-23T08:00:00.000Z",
+"history": [ /* full captured courier trail for this courier+status, see the response */ ],
+"requestId": "..."
+}
+}
+ERROR RESPONSES
+Status
+Cause
+404
+Runtime is not sandbox mode (route doesn't exist), order not
+found for the given courier+identifier, or the order belongs
+to a different account.
+401
+API key missing/invalid/disabled, or the key doesn't have the
+Check order status permission.
+409
+Order has already been deleted.
+422
+courier missing/unsupported, or both or neither
+of orderId/trackingId sent. Response
+body is success/message only — no
+supportedValues.
+422
+Both or neither of statusCategory/status
+sent; target isn't in the canonical enum; or target has no
+mapping for the given courier. Response body includes
+supportedValues with the canonical enum.
+500
+Persistence failure — no partial write is left behind.
+STATUS MAPPING PER COURIER
+DELIVERED and RTS are stored identically
+for every courier — both status and
+statusCategory equal the canonical value sent. Only
+ON DELIVERY differs per courier:
+Courier
+Stored status
+Stored statusCategory
+JNE
+ON DELIVERY
+ON DELIVERY
+SiCepat
+ON DELIVERY
+DELIVERY COURIER
+Sap
+ON DELIVERY
+ON DELIVERY
+iDexpress
+ON DELIVERY
+ON DELIVERY
+JT
+ON DELIVERY
+ON DELIVERY
+lion
+DELIVERY COURIER
+ON DELIVERY
+anteraja
+DELIVERY COURIER
+DELIVERY COURIER
+pos
+DELIVERY COURIER
+DELIVERY COURIER
+ℹ History replacement:
+When a captured trail exists for the requested courier+target,
+the response's history field
+replaces the order's entire history with an
+authentic multi-entry trail for that courier (not a single
+synthetic line) — the order then reads back through
+Get orders exactly like a real order
+that went through that courier's lifecycle. Coverage:
+JNE, SiCepat, Sap,
+iDexpress, JT, lion,
+anteraja, pos have a captured trail for
+all three targets.
+⚠ No production side effects:
+a simulation never sends WhatsApp/SMS/email to a real receiver,
+never triggers reconciliation, balance mutation, COD payout,
+refund, claim, invoice or fee changes, never creates or changes an
+operational ticket automatically (including for RTS),
+and never calls a real 3PL or external production endpoint.
+# 1. Create a sandbox order
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/order' \
+-H 'Content-Type: application/json' \
+-d '{"courier":"JNE","orders":[{...}],"pickup":{...}}'
+# 2. Simulate the order moving ON DELIVERY
+curl -X POST '{BASE_URL}/api/public/{API_KEY}/order/simulation' \
+-H 'Content-Type: application/json' \
+-d '{"courier":"JNE","orderId":"ORDER-1","statusCategory":"ON DELIVERY"}'
+# 3. Read the order back — status and history reflect the simulated change
+curl '{BASE_URL}/api/public/{API_KEY}/order?order_id=ORDER-1'
+# 4. Repeat step 2 with "DELIVERED", then "RTS" (or vice versa) to exercise
+#    other points in the lifecycle — targets can be set in any order, this
+#    is a simulation override, not a real lifecycle state machine.
+Delete Orders
+An order can only be deleted while its status is still
+active, error,
+PENDING PICKUP, PICKUP FAILED, or
+PICKUP_FAILED_API (or has no status yet). This rule is
+the same for every courier — once an order moves past pickup (picked
+up, in transit, delivered, RTS, etc.) it can no longer be deleted
+through this endpoint, and the request simply skips that order.
+⚠ Notes
+Anteraja — orders can only be deleted
+after 5 minutes from order created. Deleting
+before that returns an error asking you to wait.
+All other couriers (JNE, SiCepat, Sap,
+iDexpress, JT, Ninja, Lion, Paxel, POS, SPX) — there is no
+fixed waiting time on Mengantar's side once the order already
+has a tracking number. The delete request is forwarded to the
+courier's own API, and it succeeds or fails based on that
+courier's own status/timing rules. If the courier rejects the
+cancellation (for example because it has already been picked
+up), the order is not deleted and an error message from the
+courier is returned.
+# Here is a curl example
+curl \
+-X DELETE '{BASE_URL}/api/public/{API_KEY}/order' \
+-H 'Content-Type: application/json' \
+-d '{
+"courier": "Sap",
+"ids": ["6332f9dfdeff6b0cae5e6c11", "6332f9dfdeff6b0cae5e6c12"]
+}'
+DELETE
+{BASE_URL}/api/public/{API_KEY}/order
+Result example :
+{
+"success": true,
+"message": "2 orders are deleted from 2 selected orders",
+"deletedCount": 2,
+"deletedOrderIds": ["6332f9dfdeff6b0cae5e6c11", "6332f9dfdeff6b0cae5e6c12"],
+"deletedOrderIdsHumanReadable": ["22092742ED56", "22092742ED57"]
+}
+BODY PARAMETERS
+Field
+Type
+Description
+courier
+String
+The value should be "JNE", "SiCepat", "Sap", "iDexpress",
+"JT", "Ninja", "lion", "anteraja", "pos", or "spx".
+Ninja stays valid here for orders created before
+1 September 2026.
+ids
+Array
+Array of ids
+orderIds
+Array
+(optional) Array of ORDER_ID (if ids is exists, then do not
+send orderIds, or else, it will override the ids)
+Get batches
+# Here is a curl example
+curl -X GET '{BASE_URL}/api/public/{API_KEY}/batch?page=1&size=50&dateRange={"startDate":"2021-09-23T00:00:00.000Z","endDate":"2022-09-23T23:59:59.999Z"}&courier=Sap'
+GET
+{BASE_URL}/api/public/{API_KEY}/batch
+Result example :
+{
+"success": true,
+"data": [
+{
+"isDraft": false,
+"isDeleted": false,
+"isArchived": false,
+"orders": 1,
+"error": 0,
+"unpaid": 0,
+"delivered": 0,
+"undelivered": 0,
+"rts": 0,
+"reconciled": 0,
+"active": 1,
+"totalToPay": 0,
+"totalToPaySpecial": 0,
+"printErrorBills": false,
+"plan": "Standart JNE",
+"isActive": true,
+"printedDates": [],
+"_id": "63330dd0d87f79e901f35824",
+"user_id": "5fc6289532d4f232eb029ac8",
+"user": {
+"email": "[email protected]",
+"name": "Name"
+},
+"address": {
+"PICKUP_NAME": "address",
+"PICKUP_PIC": "address",
+"PICKUP_PIC_PHONE": "12312345",
+"PICKUP_ADDRESS": "123123",
+"PICKUP_DISTRICT": "GROGOL PETAMBURAN",
+"PICKUP_CITY": "JAKARTA BARAT"
+},
+"address_id": "62e27d67ecf5ae2893bc070a",
+"id": "22092721DBC7B5",
+"newBatchId": 1,
+"invalidOrders": null,
+"draftData": null,
+"orderData": [
+{
+"orderId": "ORD-0001",
+"cnote_no": "JX1234567890",
+"status": "active",
+"SPECIAL_INS": "Tolong hubungi penerima sebelum diantar"
+}
+],
+"createdAt": "2022-09-27T14:50:56.477Z",
+"updatedAt": "2022-09-27T14:50:56.477Z",
+"__v": 0
+},
+]
+}
+QUERY PARAMETERS
+Field
+Type
+Description
+page
+String
+Page number (default: 1, maximum: 100)
+size
+String
+Batches count on page. Default 50, maximum
+100; a larger value is rejected with HTTP 400.
+Use page (up to 100) to read the next batches.
+When courier is omitted, the size is split evenly
+across couriers.
+courier
+String
+The value should be "JNE" or "SiCepat" or "Sap" or "iDexpress"
+or "JT" or "Ninja" or "lion" or "anteraja" or "pos" or "spx".
+Ninja stays valid here for reading batches
+created before 1 September 2026.
+RESPONSE FIELDS
+Field
+Type
+Description
+orderData
+Array
+The orders inside the batch. Empty array when the batch has no
+order.
+orderData[].orderId
+String
+Order ID
+orderData[].cnote_no
+String
+Airway bill (resi) number. null when the order
+has no airway bill yet.
+orderData[].status
+String
+Current status of the order
+orderData[].SPECIAL_INS
+String
+Delivery instruction of the order, as sent in
+deliveryInstruction when the order was created.
+Some couriers store a default instruction when none was sent;
+otherwise null.
+Delete Batch
+# Here is a curl example
+curl \
+-X DELETE '{BASE_URL}/api/public/{API_KEY}/batch' \
+-H 'Content-Type: application/json' \
+-d '{
+"courier": "Sap",
+"id": "6332f9dfdeff6b0cae5e6c11"
+}'
+DELETE
+{BASE_URL}/api/public/{API_KEY}/batch
+Result example :
+{
+"success": true,
+"data": { ... },
+"deletedCount": 1,
+"unDeletedCount": 0,
+"totalCount": 1,
+"message": "1 orders are deleted from 1 orders"
+}
+RESPONSE FIELDS
+Every processed batch returns the fields below, whichever courier it
+belongs to. A courier can add extra fields on top (see the last
+row). A draft batch has no orders yet, so it returns
+deletedCount, unDeletedCount and
+totalCount of 0, plus isBatchDraft: true.
+An unsuccessful request returns success: false with a
+message.
+Field
+Type
+Description
+success
+Boolean
+true when the request was processed
+data
+Object
+The batch after the deletion (its remaining order counts)
+deletedCount
+Number
+Orders deleted by this request
+unDeletedCount
+Number
+Orders of the batch that were not deleted
+totalCount
+Number
+Orders of the batch that were considered
+message
+String
+Summary, e.g. "1 orders are deleted from 3 orders"
+ordersCount, totalBalanceRefund, errorMessages
+Number, Number, Array
+Only for "lion", "anteraja", "pos" and "spx":
+ordersCount equals totalCount,
+totalBalanceRefund is the balance returned, and
+errorMessages lists orders the courier refused to
+cancel.
+BODY PARAMETERS
+Field
+Type
+Description
+courier
+String
+The value should be "JNE", "SiCepat", "Sap", "iDexpress",
+"JT", "Ninja", "lion", "anteraja", "pos", or "spx".
+Ninja stays valid here for batches created before
+1 September 2026.
+id
+String
+Batch id
+Get Receiver Score Number
+# Here is a curl example
+curl \
+-X GET {BASE_URL}/api/public/{API_KEY}/getReceiverScoreByNumberUser?search=8123456789
+GET
+{BASE_URL}/api/public/{API_KEY}/getReceiverScoreByNumberUser
+Return Receiver Score per courier
+⚠ Sandbox:
+In sandbox this endpoint is open to every API key and returns
+sample data, not real receiver history. The same
+number always returns the same sample, in the same response shape
+as production, including
+data.summary. A number
+ending in 0 returns the
+"no valid courier" response (Result example 2).
+The restricted access and daily limit described below are not
+applied in sandbox, but they apply in production:
+your account must be on the whitelist (otherwise
+403 Not allowed), and
+requests beyond your daily allowance get
+429 until midnight
+(WIB). One phone number per request applies in both environments:
+a missing or repeated
+search parameter gets
+422.
+🔒 Restricted access:
+This endpoint is limited to whitelisted accounts. Requests from
+an API key whose account is not on the whitelist get
+403 Not allowed. Access
+is granted on request: contact Mengantar Customer Service (CS) to
+request access.
+⏱ Daily limit:
+The number of checks allowed per day is based on your active
+order volume in Mengantar, counted across your account and its
+sub-accounts. Once the day's allowance is used up, further
+requests get 429 with a
+message saying so, and the allowance is full again after midnight
+(WIB). To request a higher daily limit, contact Mengantar Customer
+Service (CS).
+One phone number per request. A request carrying a list of numbers
+- for example a repeated
+search parameter - gets
+422.
+Result example 1 - receiver with courier data :
+{
+"success": true,
+"data": {
+"_id": "64719ada8f853438986abb2a",
+"phone": "8123456789",
+"JNE": {
+"total": 36,
+"value": 10542000,
+"inProgress": 3652,
+"delivered": 35,
+"rts": 1,
+"undelivered": 0,
+"rate": 9.7
+},
+"SiCepat": {
+"total": 3,
+"value": 350000,
+"inProgress": 654,
+"delivered": 2,
+"rts": 1,
+"undelivered": 0,
+"rate": 6.7
+},
+"Sap": {
+"total": 3,
+"value": 710000,
+"inProgress": 528,
+"delivered": 2,
+"rts": 0,
+"undelivered": 1,
+"rate": 6.7
+},
+"iDexpress": {
+"total": 1,
+"value": 75000,
+"inProgress": 1151,
+"delivered": 1,
+"rts": 0,
+"undelivered": 0,
+"rate": 10
+},
+"JT": {
+"total": 4,
+"value": 450000,
+"inProgress": 2970,
+"delivered": 2,
+"rts": 1,
+"undelivered": 1,
+"rate": 5
+},
+"Ninja": {
+"total": 4,
+"value": 880000,
+"inProgress": 285,
+"delivered": 4,
+"rts": 0,
+"undelivered": 0,
+"rate": 10
+},
+"createdAt": "2023-05-27T05:53:30.132Z",
+"updatedAt": "2025-06-04T07:05:33.146Z",
+"summary": {
+"average_number": 8,
+"average_score": "A-"
+}
+}
+}
+Result example 2 - no valid courier :
+// Returned when no courier has any transaction for this number.
+// Do not rely on which courier keys are present: a first-time
+// lookup returns every supported courier as an empty object, while
+// a number already in the rollup returns only couriers that have
+// data - none, here. `summary` is the stable part of the contract,
+// and it falls back to null / "-" when there is nothing to average.
+{
+"success": true,
+"data": {
+"JNE": {},
+"SiCepat": {},
+"summary": {
+"average_number": null,
+"average_score": "-"
+}
+}
+}
+SUMMARY
+data.summary is the receiver score
+aggregated across couriers, so you do not have to compute it
+yourself. Only couriers with more than 0 transactions are counted,
+and every counted courier weighs the same regardless of how many
+transactions it has.
+Field
+Type
+Description
+average_number
+Number / null
+Average of the rate of every
+counted courier, rounded to one decimal. It is a score on a
+0-10 scale — the same scale as the
+per-courier rate — not a
+transaction count and not a percentage. For example
+8.4 means an average rate of
+8.4 out of 10. null when no
+courier has data.
+average_score
+String
+Letter grade for
+average_number:
+A from 9,
+A- from 8,
+B from 7,
+B- from 6,
+C from 5,
+C- from 4,
+D from 3,
+D- from 2,
+E from 1,
+E- below 1. Prefixed with
+≈ when the counted couriers
+have fewer than 4 transactions combined — the grade is still
+returned, but it is an approximation from too little history
+to be stable yet. So the value can come back as
+"≈A",
+"≈D-" or
+"≈E-", and your parser has to
+accept that prefix on any of the grades above. Note the
+threshold counts transactions, not couriers: one
+courier with 3 transactions still gets the prefix. The value
+is "-" when no courier has
+data.
+QUERY PARAMETERS
+Field
+Type
+Description
+search
+String
+reciever phone number
+Errors
+API uses the following error codes:
+Error Code
+Meaning
+X000
+Some parameters are missing. This error appears when you don't pass every mandatory parameters.
+X001
+Unknown or unvalid secret_key. This error appears if you use an unknow API key or if your API key expired.
+X002
+Unvalid secret_key for this domain. This error appears if you use an API key non specified for your domain. Developper or Universal API keys doesn't have domain checker.
+X003
+Unknown or unvalid user token. This error appears if you use an unknow user token or if the user token expired.
+-->
+Webhook
+Instead of polling
+GET {BASE_URL}/api/public/{API_KEY}/order, you can have Mengantar push order status updates to your own URL.
+Sandbox: webhooks are open to every sandbox account, with
+no whitelist and nothing to request. Sandbox orders never move on
+their own, so you trigger the delivery yourself: every successful
+Simulate order status call
+sends one webhook carrying the new
+status_category, even when it is
+the same as before. Every delivery from the sandbox carries the
+header x-environment: sandbox;
+production deliveries carry no such header. Still use a different
+Webhook URL in sandbox than in production, so a rehearsal can
+never be mistaken for a real shipment update. Everything below
+behaves the same in both environments.
+Set your Webhook URL in
+Settings → Account → Integrasi Public API. Saving
+it requires a verification code, and generates your
+Webhook Secret the first time. The URL must use HTTPS, must
+not point to an internal address, and is limited to 512 characters.
+In sandbox every account can set one, with nothing
+to request. In production webhooks are enabled per
+account while the rollout is staged, so the Webhook section only
+appears once your account has been enabled — ask the Mengantar
+team if you do not see it yet.
+What we send
+We send a POST with a JSON body
+every time the order status changes.
+POST https://your-domain.com/webhook
+Content-Type: application/json
+x-timestamp: 1787548800000
+x-signature: 05826dec707ea7164801d952cb7eaf7ce9adc0c8aa0b93366480434164a1a111
+{
+"cnote_no": "JNE1234567890",
+"order_id": "ORD-000123",
+"courier": "JNE",
+"status_category": "DELIVERED"
+}
+Field
+Description
+cnote_no
+Tracking number (AWB) of the order.
+order_id
+Mengantar order number.
+courier
+Courier handling the order.
+status_category
+The only status we send, and the one to build your logic on.
+The raw courier status is deliberately not included: its
+wording is open-ended and differs per courier, so branching on
+it would mean writing per-courier handling.
+This is the same status category your orders already carry, so
+the values differ per courier. For the complete per-courier
+list, refer to the
+Order Status Reference Sheet. The values you will see most often are
+PENDING PICKUP,
+PICKED UP,
+ON DELIVERY,
+DELIVERED,
+UNDELIVERED,
+PICKUP FAILED, and
+RTS.
+Two values come from us rather than from a courier:
+ACTIVE/WAITING NEXT PROCESS
+(we accepted the order but the courier has not reported
+anything yet) and ERROR (we
+have no usable status for this order). Neither appears in the
+reference sheet.
+Treat the list as open-ended. Couriers add
+states over time, so always keep a default branch rather than
+matching an exhaustive list. One case deserves particular
+care: a cancellation arrives as
+CANCELED from some couriers
+and CANCELLED from others
+— handle both spellings.
+Telling sandbox from production
+A delivery sent from the sandbox environment carries one extra
+header, x-environment: sandbox. A
+production delivery carries no
+x-environment header at all. The
+body is identical in both environments and the header is not part of
+the signature, so a receiver that ignores it keeps working; one that
+reads it can refuse to act on a sandbox update even if it ever
+reaches a production URL. We still recommend a separate Webhook URL
+per environment rather than relying on the header alone.
+POST https://your-domain.com/webhook
+Content-Type: application/json
+x-environment: sandbox
+x-timestamp: 1787548800000
+x-signature: 05826dec707ea7164801d952cb7eaf7ce9adc0c8aa0b93366480434164a1a111
+Verifying the request
+Every request carries
+x-signature and
+x-timestamp. Checking them is
+optional — your endpoint receives updates either way
+— but we strongly recommend it, and it takes about ten lines.
+Why it matters
+Your Webhook URL sits on the public internet, and anyone who learns
+it can send it a request. A leaked log, a screenshot in a support
+ticket, a former employee, or simply a guessable path is enough.
+If you act on whatever arrives, someone who knows your URL can post
+a fake DELIVERED and mark an order
+complete in your system before it ever shipped. We do not send from
+a fixed set of IP addresses, so an IP allowlist is not an option:
+the shared secret is the only thing that separates a genuine update
+from a forged one.
+The two headers give you two different guarantees:
+Header
+What it proves
+x-signature
+The request came from Mengantar and the body was not modified
+along the way. Only someone holding your Webhook Secret can
+produce it.
+x-timestamp
+When we sent it. Lets you reject an old, genuine request that
+someone captured and is replaying now.
+How to verify
+The signature is an HMAC-SHA256, in hex, of
+{x-timestamp}.{raw request body}, keyed with your Webhook Secret. Three steps:
+Capture the raw request body, before any JSON parsing.
+Compute the HMAC over
+{x-timestamp}.{raw body}
+using your Webhook Secret as the key.
+Compare it to x-signature with a
+constant-time comparison, and reject the request if they differ.
+Compute it over the raw body exactly as received.
+Re-serialising the parsed JSON can reorder or reformat it and will
+not match.
+Test vector
+Check your implementation against this before going live. If your
+code turns these inputs into the same signature, it will verify our
+real requests correctly. The secret below is only for this example
+— use your own Webhook Secret in production.
+Webhook Secret : testsecret
+x-timestamp    : 1787548800000
+raw body, exactly these bytes, one line, no spaces:
+{"cnote_no":"JNE1234567890","order_id":"ORD-000123","courier":"JNE","status_category":"DELIVERED"}
+the string you sign, {x-timestamp} + "." + raw body:
+1787548800000.{"cnote_no":"JNE1234567890","order_id":"ORD-000123","courier":"JNE","status_category":"DELIVERED"}
+expected x-signature:
+05826dec707ea7164801d952cb7eaf7ce9adc0c8aa0b93366480434164a1a111
+The sample request further up is this same vector, so you can replay
+it against your endpoint and it should pass.
+Note the body there is indented only to be readable —
+what we actually send, and what you must sign, is the single line
+above.
+From a terminal, without writing any code:
+echo -n '1787548800000.{"cnote_no":"JNE1234567890","order_id":"ORD-000123","courier":"JNE","status_category":"DELIVERED"}' \
+| openssl dgst -sha256 -hmac 'testsecret'
+SHA2-256(stdin)= 05826dec707ea7164801d952cb7eaf7ce9adc0c8aa0b93366480434164a1a111
+const crypto = require('crypto');
+// express: keep the raw body so the signature can be checked
+app.use(express.json({
+verify: (req, res, buf) => { req.rawBody = buf.toString(); }
+}));
+app.post('/webhook', (req, res) => {
+const expected = crypto
+.createHmac('sha256', process.env.MENGANTAR_WEBHOOK_SECRET)
+.update(`${req.get('x-timestamp')}.${req.rawBody}`)
+.digest('hex');
+const received = req.get('x-signature') || '';
+const valid =
+expected.length === received.length &&
+crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(received));
+if (!valid) return res.sendStatus(401);
+// optional: reject anything older than a few minutes
+if (Date.now() - Number(req.get('x-timestamp')) > 5 * 60 * 1000) {
+return res.sendStatus(401);
+}
+// ... update your order here ...
+res.sendStatus(200);
+});
+PHP:
+<?php
+$secret = getenv('MENGANTAR_WEBHOOK_SECRET');
+// raw body, before json_decode
+$rawBody   = file_get_contents('php://input');
+$timestamp = $_SERVER['HTTP_X_TIMESTAMP'] ?? '';
+$received  = $_SERVER['HTTP_X_SIGNATURE'] ?? '';
+$expected = hash_hmac('sha256', $timestamp . '.' . $rawBody, $secret);
+if (!hash_equals($expected, $received)) {
+http_response_code(401);
+exit;
+}
+// optional: reject anything older than a few minutes
+if (abs(round(microtime(true) * 1000) - (int) $timestamp) > 5 * 60 * 1000) {
+http_response_code(401);
+exit;
+}
+$payload = json_decode($rawBody, true);
+// ... update your order here ...
+http_response_code(200);
+Python (Flask):
+import hashlib, hmac, os, time
+from flask import Flask, request
+app = Flask(__name__)
+SECRET = os.environ['MENGANTAR_WEBHOOK_SECRET'].encode()
+@app.post('/webhook')
+def webhook():
+raw = request.get_data()          # bytes, before any JSON parsing
+timestamp = request.headers.get('x-timestamp', '')
+received = request.headers.get('x-signature', '')
+expected = hmac.new(
+SECRET, f'{timestamp}.'.encode() + raw, hashlib.sha256
+).hexdigest()
+if not hmac.compare_digest(expected, received):
+return '', 401
+# optional: reject anything older than a few minutes
+if abs(time.time() * 1000 - int(timestamp)) > 5 * 60 * 1000:
+return '', 401
+payload = request.get_json()
+# ... update your order here ...
+return '', 200
+If the signature never matches
+Almost every failed integration is one of these:
+Signing a re-serialised body. By far the most common cause.
+Parsing the JSON and dumping it again changes key order and
+spacing, so the bytes you sign are not the bytes we signed. Keep
+the raw body.
+The framework consumed the body first. In Express you need
+the verify hook shown above,
+because express.json() discards
+the raw stream. Laravel keeps it — use
+$request->getContent().
+Forgetting the timestamp prefix. The signed string is
+{x-timestamp}.{raw body}, not the body on its own. The separator is a single dot.
+Using the wrong secret. Regenerating your API key also
+replaces the Webhook Secret. If verification broke suddenly and
+nothing else changed, check this first.
+A plain == comparison. It
+works, but it leaks timing information. Use
+hash_equals,
+hmac.compare_digest, or
+crypto.timingSafeEqual.
+If you choose not to verify at all, at least make your Webhook URL
+path long and unguessable. That is a speed bump, not a substitute:
+the path travels with every request we send and is not a secret.
+Responding and retries
+Answer with any 2xx status. We wait
+at most 5 seconds, so acknowledge first and do your processing
+afterwards. Redirects are not followed.
+A failed delivery is retried up to 3 times, roughly 1s, 5s and 15s
+later. Delivery is best effort: if all attempts fail the update is
+not resent, so keep
+GET {BASE_URL}/api/public/{API_KEY}/order
+as your reconciliation path.
+Deliveries are independent, so they can arrive out of order after a
+retry. Use x-timestamp to decide
+which update is newer rather than the order of arrival, and expect
+the same status to arrive more than once.
+If delivery is paused
+If your endpoint fails to take 20 updates in a row within 24 hours,
+we pause delivery to it automatically. A URL that has stopped
+responding otherwise costs four outbound attempts on every status
+change, indefinitely. Any successful delivery resets the count, so
+occasional failures never accumulate toward it.
+While delivery is paused,
+Settings → Account → Integrasi Public API shows a
+notice saying so and when it happened, and we send a notification to
+the bell in your dashboard. If updates stop arriving, check there
+first.
+To resume, make sure your endpoint accepts requests again, then
+press
+Aktifkan kembali ("Reactivate") in that same section. Saving
+your Webhook URL again has the same effect. Either way your Webhook
+URL and Webhook Secret are kept as they are, and resuming does not
+require a verification code.
+Updates whose status changed while delivery was paused are
+not resent. Use
+GET {BASE_URL}/api/public/{API_KEY}/order
+to reconcile anything you missed.
+Pausing affects webhook delivery only. Your API key keeps working,
+so creating orders and every other endpoint are unaffected.
+Rotating the secret
+You can regenerate the Webhook Secret on its own, without touching
+your API key. Note that regenerating the API key also
+replaces the Webhook Secret — your Webhook URL is kept, but
+you will need to update the secret in your system.
