@@ -39,9 +39,9 @@ Mengantar.com is an Indonesian logistics aggregator: one API for multi-courier s
 
 As an **Official Partner Mengantar**, [ongki.pro](https://ongki.pro) maintains this documentation to help teams integrate Mengantar into storefronts, headless commerce projects, and backend systems.
 
-> **Verified:** endpoints, parameters, and response shapes here are matched against the official docs (`api-public.mengantar.com/docs`) and **verified live against the production API** (read-only, 2026-07-03; **re-verified 2026-07-19**; courier estimates re-checked **2026-09-25**). The official-docs audit (re-synced 2026-11-11) covers all 25 endpoints, create-order idempotency, async PDF labels, dropshippers, Dangerous Goods, and HMAC-SHA256 Webhook support; write paths not exercised live are marked in [10-verification-checklist](docs/10-verification-checklist.md).
+> **Verified:** endpoints, parameters, and response shapes here are matched against the **official docs v2.0.0** (`api-public.mengantar.com/docs`, synced **2026-11-19**; a verbatim per-page snapshot lives in [docs/official-snapshot](docs/official-snapshot/README.md)) and verified live (production read-only 2026-07-03 / 07-19 / 09-25; **sandbox read-only 2026-11-19**). Write paths not exercised live are marked in [10-verification-checklist](docs/10-verification-checklist.md).
 >
-> ⚠️ **Courier Status (September 2026):** **Ninja** is discontinued effective 1 September 2026. **POS** is officially supported. **SPX (Shopee Express)** `spx` is listed in the official docs (checked 2026-11-11) for estimates, create-order, pay-unpaid and simulation; a live create-order has not been observed yet, and a live single-courier SPX estimate answered `400 Invalid courier` on 2026-09-25. See [02 §1.2](docs/02-couriers-and-rules.md).
+> ⚠️ **Courier Status:** **Ninja** is discontinued since 1 September 2026. **POS** is supported (COD depends on the account's delivered rate). **SPX (Shopee Express)** `spx` is supported for estimates (single-courier `courier=spx` returns 200 on sandbox, 2026-11-19), create-order, pay-unpaid, delete and simulation; a live create-order has not been observed by this repo yet. **J&T ECO** is booked with `eco: true` on a `JT` order. See [02 §1](docs/02-couriers-and-rules.md).
 
 ---
 
@@ -100,7 +100,7 @@ sequenceDiagram
 | GET | `/address/search?keyword=` | Search area → `origin_id` / `destination_id` |
 | POST · GET · DELETE | `/address` | Create/update · list · delete pickup addresses |
 | PUT | `/address/{id}` | Update specific pickup address by ID |
-| POST · GET | `/time` | Add · list pickup schedule (`mm-dd-yyyy`) |
+| POST · GET | `/time` | Add · list pickup schedule (`MM-DD-YYYY` or Unix ms; two-digit hours `09:00`–`20:00`) |
 | GET | `/order/estimate?...` | Shipping rate (single / `all`, supports Dangerous Goods) |
 | GET | `/api/order/allEstimatePublic` · `…/allEstimate3PL` **(no-key)** | All couriers (flat 20% · 3PL, supports DG) |
 | POST | `/order/getPerformancePublic` | Courier performance score |
@@ -117,7 +117,7 @@ sequenceDiagram
 | POST | `/order/simulation` | **Sandbox only** (404 in production): move an own order to ON DELIVERY / DELIVERED / RTS and send one webhook |
 | POST | *Your Webhook Endpoint* | Event-driven order status updates (HMAC-SHA256 signature) |
 
-**Auth:** API key is placed in the path (`/api/public/{KEY}/...`), not in headers. **Response:** JSON, normally with a `success` field. Official error codes: `X000`–`X003`, `409` (batch concurrency), `429` (print rate limit). Full reference → [01](docs/01-api-reference.md).
+**Auth:** API key is placed in the path (`/api/public/{KEY}/...`), not in headers; sandbox and production keys are separate. **Errors:** a rejected key, missing permission, non-allowed IP or whitelist-only endpoint is always `403 {"success":false,"message":"Not allowed"}`; validation is `400` with `field`/`message`; plus `409` (batch concurrency), `429` (print limit, receiver-score daily limit) and body `code` values such as `COURIER_DISABLED` and `IDEMPOTENCY_*`. *(The `X000`–`X003` codes in releases ≤ 0.4.0 are not in the official docs.)* Full reference → [01](docs/01-api-reference.md).
 
 ---
 
@@ -129,7 +129,7 @@ sequenceDiagram
 ├── AGENTS.md  (= CLAUDE.md)   # contract for AI coding agents (integration golden rules)
 ├── Makefile                  # terminal entrypoint: make check | client-check | client-test | smoke
 ├── docs/                     # 01–14 canonical documentation
-├── spec/openapi.yaml         # OpenAPI 3.1 — 25 endpoints + Webhooks
+├── spec/openapi.yaml         # OpenAPI 3.1 — 25 operations + Webhooks
 ├── examples/                 # server-only TypeScript client + usage, recipes, test suites
 ├── scripts/                  # check-links.sh (validation) · smoke.sh (read-only API test)
 ├── requests.http             # REST-client file (VS Code / JetBrains)
@@ -152,7 +152,7 @@ The API is stack-agnostic. You only need server-side HTTP calls and standard HMA
 | **Serverless** Cloudflare Workers, Vercel, Lambda | Proxy + cache at edge/function layer | Follow server-only pattern |
 | **Database** Supabase/Postgres/MySQL | Shipments model + SQL schema | Data model → [03](docs/03-data-model.md) §0 |
 | **Automation** queue/cron | Async create + tracking polling | Flow → [04](docs/04-how-it-works.md) |
-| **Codegen client** | OpenAPI 3.1, 25 endpoints + Webhook | [spec/openapi.yaml](spec/openapi.yaml) · typed TS: `examples/mengantar-client.ts` |
+| **Codegen client** | OpenAPI 3.1, 25 operations + Webhook | [spec/openapi.yaml](spec/openapi.yaml) · typed TS: `examples/mengantar-client.ts` |
 
 ---
 
@@ -160,7 +160,7 @@ The API is stack-agnostic. You only need server-side HTTP calls and standard HMA
 
 | # | File | Contents |
 | --- | --- | --- |
-| 01 | [api-reference](docs/01-api-reference.md) | REST auth, **25 endpoints** (official docs, incl. idempotency & sandbox simulation), Webhook HMAC-SHA256, request/response, error codes, caching |
+| 01 | [api-reference](docs/01-api-reference.md) | REST auth, **25 operations** (official docs, incl. idempotency & sandbox simulation), Webhook HMAC-SHA256, request/response, error codes, caching |
 | 02 | [couriers-and-rules](docs/02-couriers-and-rules.md) | Courier mapping (estimate key ↔ shipment name, Ninja discontinued, POS active, SPX in estimates), Dangerous Goods, Cargo, limits |
 | 03 | [data-model](docs/03-data-model.md) | Order object (API) + SQL schema, Dropshipper, Label, Webhook, area normalisation |
 | 04 | [how-it-works](docs/04-how-it-works.md) | Architecture and workflow: checkout→rate, order→shipment, Webhook event-driven tracking, async labels |
@@ -174,7 +174,7 @@ The API is stack-agnostic. You only need server-side HTTP calls and standard HMA
 | 12 | [development](docs/12-development.md) | Development workflow, invariants, validation, and release checklist |
 | 13 | [integration-php](docs/13-integration-php.md) | Native PHP & Laravel implementation (cURL client + HMAC-SHA256 Webhooks) |
 | 14 | [integration-node-js](docs/14-integration-node-js.md) | Node.js, Express, Fastify, and Vanilla JS fetch client & Webhook receivers |
-| — | [spec/openapi.yaml](spec/openapi.yaml) | OpenAPI 3.1 spec — 25 endpoints + Webhook, matched to official live docs |
+| — | [spec/openapi.yaml](spec/openapi.yaml) | OpenAPI 3.1 spec — 25 operations + Webhook, matched to official live docs |
 
 ---
 
@@ -183,12 +183,14 @@ The API is stack-agnostic. You only need server-side HTTP calls and standard HMA
 - Tracking number is `cnote_no` (not `tracking_id`); create-order `data` is an **array**, but keep the top-level `batch_id` and `errors[]` for unpaid and partial-failure handling.
 - **Two different "origin" IDs** (live-verified): estimate `origin_id`/`destination_id` are **area `_id`s** (from `/address/search`, or a pickup's `PICKUP_AUTOFILL`) — *not* the pickup-address `_id`. Create-order `pickup.address_id` and `/time?address=` use the **pickup-address `_id`**. Mixing them up returns `success:false`.
 - Courier names for create-order use Mengantar's official casing: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` (in the official docs; live create-order not yet observed). *(Ninja is discontinued from 1 September 2026)*.
-- **`GET /order/estimate?courier=all` returns `data` as a per-courier map**, **not an array** (live-verified 2026-07-19) — iterate with `Object.entries(data)`. Map keys use a **different casing** from shipment names (`SAP`/`SAPLite`/`SapCargo` → `Sap`, `JNECargo` → `JNE`, `spx`, …; live 2026-09-25) — map them via [02 §1.1](docs/02-couriers-and-rules.md). Delivery-time fields are optional per courier (absent in 2026-07-19 entries, present on `spx` in 2026-09-25).
-- Single-courier estimates are **case-sensitive** against shipment names (`Sap` ✅, `SAP` ❌ → `400 Invalid courier`) and rejected every SPX spelling when tested live on 2026-09-25 (official docs now list `spx`; not re-tested) — read SPX from `courier=all`, and treat `unsupportedOriginSpx: true` like `unsupported: true`.
-- `POST /time` uses `date` in **`mm-dd-yyyy`** (not ISO) plus fixed `9:00`–`18:00` slots.
+- **`GET /order/estimate?courier=all` returns `data` as a per-courier map**, **not an array** — iterate with `Object.entries(data)`. Map keys use a **different casing** from shipment names (`SAP`/`SAPLite`/`SapCargo` → `Sap`, `JNECargo` → `JNE`, `JTEco` → `JT` + `eco:true`, …) — map them via [02 §1.1](docs/02-couriers-and-rules.md). `estimatedSpecialPrice` is what you pay; fields vary per courier.
+- Single-courier estimates are **case-sensitive** against shipment names (`Sap` ✅, `SAP` ❌ → `400 Invalid courier`); `courier=spx` works (sandbox 2026-11-19). Treat the undocumented `unsupportedOriginSpx: true` like `unsupported: true`.
+- `POST /time` takes `date` as **`MM-DD-YYYY`** (or a Unix-ms number) and two-digit hours `09:00`–`20:00` (`9:00` is rejected). Each call creates a new slot — reuse its `_id`. `GET /time` returns `date` as Unix ms with Jakarta time written as UTC.
+- **Check the real outcome, not `success`:** create-order (per-order `status`/`cnote_no`/`isPaid`, `ordersClosedDestination`), delete order/batch (`deletedCount`), label status (`FAILED` is still 200).
+- Long lists: use **`cursor`** (`nextCursor`) on `GET /order` and `GET /invoices`; `page`/`size` cap at 100.
 - **JT Premium & SiCepat**: one batch per account — parallel batches return `409 Conflict`.
 - COD estimate param is **`COD_AMOUNT`** (uppercase) = item value + shipping; low balance → order stays **unpaid** (pay via `/order/pay-unpaid`).
-- **Sandbox Traps (Critical):** JNE will strictly fail `POST /order` if the origin is outside Jakarta (`Content not confirm our security Policy`). SAP Sandbox blocks COD entirely and restricts routes to Jakarta → Jakarta only. Do not confuse this with a bug in your code.
+- **Sandbox Traps:** SPX in sandbox only serves Jakarta pickups and destinations (the order is created, then `status:"error"`). Earlier JNE/SAP sandbox restrictions (Jakarta-only origin, SAP without COD) came from older docs and are no longer listed in v2 — re-verify before relying on them. Simulated orders cannot be deleted.
 - API requests arriving from WooCommerce origins **must** include the header `x-client-source: woocommerce`.
 - API area names may not be standardised; normalisation is required.
 - No dedicated key-validation endpoint; use a safe estimate smoke test.
@@ -213,10 +215,11 @@ After access is granted:
 
 ## Changelog
 
-**Last updated: 2026-11-12.** Recent highlights — full history in [CHANGELOG.md](CHANGELOG.md).
+**Last updated: 2026-11-19.** Recent highlights — full history in [CHANGELOG.md](CHANGELOG.md).
 
 | Date | Change |
 | --- | --- |
+| 2026-11-19 | **0.5.0 — official docs v2.0.0 sync:** per-page Markdown snapshot + new `docs-watch`; `X000`–`X003` replaced by the uniform `403 Not allowed`; pickup hours `09:00`–`20:00`; cursor pagination; J&T ECO (`eco`); corrected COD limits; `courier=spx` and `allEstimatePublic` re-verified on sandbox; client helpers `isNotAllowed`, `iterateOrders`, `paidResult`. |
 | 2026-11-12 | **0.4.0 — official docs sync:** `idempotencyKey` for safe create-order retries (codes + client support), sandbox-only `POST /order/simulation`, sandbox notes read from the sandbox host (webhooks are active there), Dangerous Goods narrowed to the couriers the docs agree on. |
 | 2026-09-25 | **SPX correction (live, read-only):** `spx` returned by `estimate?courier=all` with new `unsupportedOriginSpx` / `unsupportedPickup` / `pickupSchedule` fields; observed estimate-key casing documented; single-courier `400 Invalid courier` documented; `spx` shipment name marked support-confirmed, not yet observed. |
 | 2026-09-25 | **Official 24-Endpoint & Webhook Audit:** 24 endpoints synchronized from official docs, official HMAC-SHA256 Webhook engine & test vector, PHP Native/Laravel & Node.js guides, POS Indonesia active, Ninja discontinued per 1 Sept 2026, Dropshipper module, and Async Label Generation. |

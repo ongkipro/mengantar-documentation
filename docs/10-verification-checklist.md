@@ -11,19 +11,33 @@ Hal-hal yang harus dikonfirmasi dengan akun/sandbox. Jalankan cURL di
 Dicocokkan dengan `https://api-public.mengantar.com/docs/` — **tidak perlu** diverifikasi ulang (kecuali ingin cek nilai nyata):
 
 - ✅ Daftar endpoint (25) + method + parameter — lihat [01](01-api-reference.md) §2.
-- ✅ Kode error resmi: `X000`, `X001`, `X002`, `X003`, `409 Conflict` (konkurensi batch JT/SiCepat), `429 Too Many Requests`.
-- ✅ `POST /time`: `date` = **`mm-dd-yyyy`**, `time` = slot `9:00`–`18:00`.
+- ✅ Galat docs v2: `403 Not allowed` seragam (key/permission/IP/whitelist), `400` + `field`, `409 Conflict` (konkurensi batch JT/SiCepat), `429`. *(`X000`–`X003` tidak ada di docs v2.)*
+- ✅ `POST /time`: `date` = **`MM-DD-YYYY`** atau Unix ms (number), `time` = `09:00`–`20:00` dua digit.
 - ✅ `courier` param estimate default = `JNE`; nilai `all` → map per kurir.
 - ✅ `COD_AMOUNT` (huruf besar) = Nilai Barang + Ongkir; matriks `unsupported`/`unsupported_cod`.
 - ✅ `customProducts` hanya JNE/SiCepat/Sap/JNT; aturan Σweight & Σqty.
 - ✅ Saldo kurang → order unpaid → `POST /order/pay-unpaid`.
 - ✅ Webhook resmi didukung penuh: verifikasi signature HMAC-SHA256 (`x-timestamp`, `x-signature`) over `${timestamp}.${raw_body}`.
 - ✅ Ninja Xpress discontinued per 1 September 2026 (`courier=Ninja` → `400 COURIER_DISABLED`); POS Indonesia aktif.
-  SPX kini **tercantum** di docs resmi (cek 2026-11-11); temuan live §0d (2026-09-25) belum dicek ulang.
+  SPX tercantum di docs resmi; estimasi single `courier=spx` → 200 di sandbox 2026-11-19 (§0e).
 - ✅ Modul Dropshipper (`POST /dropshippers`, `GET /dropshippers`) & Update/Delete Pickup Address.
 - ✅ Async Label Generation (`POST /label-generation`, `GET /label-generation/{id}`) dengan rate-limit 8/menit.
 
 **Masih perlu akun asli:** stabilitas `destination_id` lintas waktu, perilaku create-order nyata di akun sandbox Anda.
+
+## 0e. Re-verifikasi SANDBOX ✅ (2026-11-19, read-only, setelah docs resmi v2.0.0)
+
+- ✅ Key invalid → `403 {"success":false,"message":"Not allowed"}` di `/address` dan `/order/estimate`. **Key produksi di host sandbox
+  juga `403 Not allowed`** (key per lingkungan terpisah).
+- ✅ `/address/search` tanpa `keyword` → `400 "The request is missing a required parameter: 'keyword'"`; estimasi tanpa id →
+  `400 "origin_id or destination_id is empty"`. Tidak ada kode `X00*` di respons mana pun.
+- ✅ `GET /order/estimate?courier=spx` → `200` dengan `estimate_delivery` dan `pickupSchedule` (mengoreksi §0d). `courier=SAP` → `400 Invalid courier`.
+- ✅ `GET /api/order/allEstimatePublic` (tanpa key) → `200` dengan 15 key (`…, iDlite, …`); `withCourierServices=true` → 16 key (+`JTEco`)
+  (mengoreksi catatan 404 di §0d).
+- ✅ `GET /api/order/allEstimate3PL` → `200` entri ringkas (`unsupported: null` untuk JNE).
+- ✅ `GET /order?size=101` → `400 "size must not exceed 100; use cursor to fetch the next page"`; `cursor=nope` → `400 "Invalid cursor…"`.
+- ✅ `GET /invoices?size=1` dan `GET /batch?size=1` → `200`; `GET /time` tanpa `address` → `200 []`; `GET /my-users` → `200 []`.
+- ⚠️ `invoiceFilter=typeAddSaldo` (nama lama) **tidak** ditolak (`200`, `count:0`) — kesalahan nama tidak terdeteksi server; pakai `typeAddBalance`.
 
 ## 0b. Diverifikasi LIVE ✅ (2026-07-03, akun produksi read-only)
 
@@ -71,18 +85,19 @@ Dikonfirmasi ulang langsung terhadap API produksi saat membangun integrasi live:
   `pickupSchedule`. Rute jauh (area Jayapura): `price` 34000, `"3 - 4 days"`, COD didukung. Contoh JSON: [01](01-api-reference.md) §5.1.
 - ✅ Estimasi single-courier **case-sensitive** terhadap nama shipment: `JT`, `Sap` → 200; `SAP`, `sap`, `jt` →
   `400 {"success":false,"message":"Invalid courier"}`. Semua 16 ejaan SPX yang dicoba → `400 Invalid courier`
-  (daftar: [02](02-couriers-and-rules.md) §1.2).
+  (daftar: [02](02-couriers-and-rules.md) §1.2). **Dikoreksi §0e (sandbox 2026-11-19): `courier=spx` → 200.**
 - ⚠️ `…/order/allEstimatePublic` dengan parameter yang sama → `404 {"success":false,"message":"Not Found"}` pada akun
-  ini. Belum dipastikan global.
+  ini. **Dikoreksi §0e: path resmi tanpa key → 200.**
 - ℹ️ Support Mengantar mengonfirmasi `POST /order` dengan `courier: "spx"` didukung, dan docs resmi kini mencantumkannya (cek 2026-11-11) — **belum teramati** live.
 
 **Masih terbuka (SPX):**
 - [ ] `POST /order` dengan `courier: "spx"` — respon nyata, `cnote_no`, status awal.
-- [ ] Arti `unsupportedPickup` dan hubungan `pickupSchedule` dengan `pickup.time_id` / `POST /time`.
-- [ ] Minimum COD SPX, dukungan `cargo`, `isDangerousGoods`, `customProducts` untuk SPX (batas maksimum dan format label `thermal-new-*` untuk SPX sudah ada di docs resmi 2026-11-11).
-- [ ] Ulangi estimasi single-courier `courier=spx`: docs resmi kini mencantumkannya, live 2026-09-25 menjawab `400 Invalid courier`.
+- [ ] Arti `unsupportedPickup` (tidak ada di docs v2). Hubungan slot sudah jelas di docs v2: `time_id` harus jatuh di dalam slot `pickupSchedule` hari itu.
+- [x] Minimum COD SPX: docs v2 menetapkan minimum umum Rp1.000 (hanya `lion` Rp10.000). Batas lain: berat 1–50 kg, COD ≤ Rp5 jt, non-COD Rp1.000–Rp10 jt.
+- [ ] Dukungan `cargo` / `customProducts` untuk SPX (docs v2 tidak membatasi; DG hanya SiCepat & iDexpress, jadi bukan SPX).
+- [x] Ulangi estimasi single-courier `courier=spx` → `200` (sandbox 2026-11-19, §0e). Produksi belum dicek ulang.
 - [ ] Nilai `courier` SPX di tracking/webhook/list order (`spx`?).
-- [ ] Path `allEstimatePublic` yang dipakai saat `404` — ulangi dengan path resmi tanpa key (`/api/order/allEstimatePublic`).
+- [x] Path resmi `/api/order/allEstimatePublic` (tanpa key) → `200` (sandbox 2026-11-19, §0e).
 
 ## 1. Kredensial & lingkungan
 - [ ] Dapatkan **API key produksi**.

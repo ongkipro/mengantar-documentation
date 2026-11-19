@@ -25,7 +25,7 @@ GET {{prefix}}/address/search?keyword=menteng
 ### 3. List alamat pickup (origin) → ambil data[]._id sebagai pickupAddressId, data[].PICKUP_AUTOFILL sebagai originWilayahId
 GET {{prefix}}/address
 
-### 4. [WRITE] Buat / in-place update alamat pickup (mendukung pinpointData)
+### 4. [WRITE] Tambah alamat pickup (pinpointData wajib untuk scheduled pickup pos). Ubah alamat: PUT /address/{id}
 POST {{prefix}}/address
 Content-Type: application/json
 
@@ -59,21 +59,21 @@ Content-Type: application/json
 ### 7. List jadwal pickup
 GET {{prefix}}/time?address={{pickupAddressId}}
 
-### 8. [WRITE] Tambah jadwal pickup — date = mm-dd-yyyy, time = 9:00..18:00
+### 8. [WRITE] Tambah jadwal pickup — date = MM-DD-YYYY (atau Unix ms number), time = 09:00..20:00 (dua digit). Tiap panggilan = slot baru
 POST {{prefix}}/time
 Content-Type: application/json
 
 { "address_id": "{{pickupAddressId}}", "date": "11-27-2026", "time": "13:00" }
 
 ### 9. Estimasi ongkir akun (semua kurir) — key map beda casing dari nama shipment (SAP→Sap, JNECargo→JNE, spx).
-# SPX: ambil dari sini (live 2026-09-25 courier=spx → 400 "Invalid courier"; docs resmi kini mencantumkan spx). unsupportedOriginSpx:true = tidak tersedia.
+# + JTEco bila rute punya tarif ECO. courier=spx tunggal kini 200 (sandbox 2026-11-19). unsupportedOriginSpx:true = tidak tersedia.
 GET {{prefix}}/order/estimate?origin_id={{originWilayahId}}&destination_id={{destId}}&courier=all&weight=2
 
 ### 10. Estimasi + COD + Dangerous Goods (courier case-sensitive: Sap ✅, SAP ❌)
 GET {{prefix}}/order/estimate?origin_id={{originWilayahId}}&destination_id={{destId}}&courier=JNE&weight=2&COD_AMOUNT=150000&isDangerousGoods=true
 
 ### 11. Estimasi public (flat 20%) — TANPA prefix key
-GET {{base}}/api/order/allEstimatePublic?origin_id={{originWilayahId}}&destination_id={{destId}}&weight=2&isDangerousGoods=false
+GET {{base}}/api/order/allEstimatePublic?origin_id={{originWilayahId}}&destination_id={{destId}}&weight=2&isDangerousGoods=false&withCourierServices=true
 
 ### 12. Estimasi 3PL (harga standar) — TANPA prefix key
 GET {{base}}/api/order/allEstimate3PL?origin_id={{originWilayahId}}&destination_id={{destId}}&weight=2&isDangerousGoods=false

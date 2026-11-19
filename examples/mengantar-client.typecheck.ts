@@ -24,3 +24,14 @@ async function labelExample() {
   await client.requestLabelGeneration({ orderIds: ["a", "b"], courier: "JNE", format: "thermal-10x15" });
 }
 void labelExample;
+
+// Docs v2: pickup hours are two-digit and run to 20:00.
+client.addPickupTime("a", "2026-11-30", "20:00");
+// @ts-expect-error "9:00" is rejected by the API since docs v2 (use "09:00")
+client.addPickupTime("a", "2026-11-30", "9:00");
+// Docs v2: single-courier spx estimate works (sandbox 2026-11-19).
+client.estimate({ originId: "o", destinationId: "d", courier: "spx" });
+// @ts-expect-error Ninja is discontinued
+client.estimate({ originId: "o", destinationId: "d", courier: "Ninja" });
+// J&T ECO is an order flag, not a courier value.
+client.createOrder({ courier: "JT", pickup: { type: "dropOff", address_id: "a" }, orders: [{ customerAddressDataId: "d", customerAddress: "x", customerName: "n", customerPhone: "081234567890", parcelContent: "p", weight: 1, quantity: 1, goodsValue: 1000, eco: true }] });

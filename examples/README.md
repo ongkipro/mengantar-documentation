@@ -4,8 +4,8 @@ Kode contoh server-only untuk integrasi Mengantar. **Bukan** paket npm — salin
 
 | File | Isi |
 |------|-----|
-| [`mengantar-client.ts`](mengantar-client.ts) | Client TypeScript tanpa dependensi (fetch global). Semua 25 endpoint (termasuk `simulateOrderStatus` khusus sandbox dan `idempotencyKey` pada `createOrder`), typed, key di path, helper verifikasi webhook Web Crypto, error terstruktur. |
-| [`mengantar-client.test.ts`](mengantar-client.test.ts) | Suite pengujian kontrak (15 test cases) memvalidasi normalisasi tanggal, test vector webhook resmi, parameter safety, endpoint envelopes, filter ketersediaan rate (SPX), dan error kurir. |
+| [`mengantar-client.ts`](mengantar-client.ts) | Client TypeScript tanpa dependensi (fetch global). Semua 25 operasi (termasuk `simulateOrderStatus` khusus sandbox dan `idempotencyKey` pada `createOrder`), typed, key di path, helper verifikasi webhook Web Crypto, error terstruktur. |
+| [`mengantar-client.test.ts`](mengantar-client.test.ts) | Suite pengujian kontrak (23 test cases) memvalidasi normalisasi tanggal, test vector webhook resmi, parameter safety, endpoint envelopes, filter ketersediaan rate (SPX), dan error kurir. |
 | [`mengantar-client.typecheck.ts`](mengantar-client.typecheck.ts) | Cek kontrak tipe saat kompilasi (`@ts-expect-error`), ikut `make client-check`: mis. `simulateOrderStatus` menolak Ninja dan menuntut tepat satu dari `orderId`/`trackingId`. |
 
 Untuk contoh berbasis framework:
@@ -45,7 +45,7 @@ const rates = await mgt.estimate({
 const perf = await mgt.getCourierPerformance(dest.CITY_NAME!, rates as Record<string, any>);
 console.log("rekomendasi:", perf.recommended);
 
-// 4) Jadwal pickup (date otomatis → mm-dd-yyyy)
+// 4) Jadwal pickup (date otomatis → MM-DD-YYYY; jam dua digit "09:00"–"20:00")
 const slot = await mgt.addPickupTime(pickupAddress._id, "2026-07-10", "13:00");
 
 // 5) Buat shipment — resi di data[].cnote_no
@@ -63,7 +63,7 @@ try {
   console.log("resi:", created.data?.[0]?.cnote_no, "batch:", created.batch_id);
 } catch (e) {
   if (e instanceof MengantarError) {
-    // e.code: "X001"/"X002"/"X003"/"409" bila terdeteksi
+    // isNotAllowed(e) → key/permission/IP/whitelist (jangan retry); e.code: field `code` body, "409", atau "429"
     console.error("Mengantar gagal:", e.code, e.message);
   }
 }
@@ -73,13 +73,16 @@ try {
 
 - Key di **path** + **redaksi** key otomatis di `onRequest`.
 - `COD_AMOUNT` (huruf besar) dari param `codAmount`.
-- `POST /time` `date` divalidasi lalu dikonversi ke **`mm-dd-yyyy`** via `toMengantarDate()`.
+- `POST /time` `date` divalidasi lalu dikonversi ke **`MM-DD-YYYY`** via `toMengantarDate()`; `PickupTimeSlot` hanya jam dua digit `09:00`–`20:00`.
 - Semua write endpoint memakai JSON sesuai kontrak resmi.
 - Opsi `clientSource: "woocommerce"` menyuntikkan header `x-client-source` otomatis.
-- `success:false` / HTTP non-2xx → `throw MengantarError` dengan `.code` (X000–X003 / 409 / 429, atau field `code` body seperti `COURIER_DISABLED`).
+- `success:false` / HTTP non-2xx → `throw MengantarError` dengan `.code` (field `code` body seperti `COURIER_DISABLED`/`IDEMPOTENCY_*`, atau `"409"`/`"429"`). `isNotAllowed(e)` mengenali `403 Not allowed`.
+- `iterateOrders()` / `iterateInvoices()` — pagination `cursor` sampai `nextCursor` kosong; `listOrders()` memberi envelope dengan `nextCursor`.
+- `deleteOrders()` / `deleteOrdersByOrderId()` / `deleteBatch()` mengembalikan body penuh — **cek `deletedCount`**, bukan `success`.
+- `paidResult(await payUnpaid(...))` menormalkan dua bentuk respons pay-unpaid ke `{ count, cnote_no }`.
 - `posCodIneligibility(error)` — kenali 403 blokir COD Pos Indonesia (`new_seller`/`insufficient`/`blocked`) beserta `deliveredRate`; `null` untuk error lain ([02](../docs/02-couriers-and-rules.md) §3.3).
 - `isRateAvailable(rate, cod)` — filter ketersediaan rate (termasuk `unsupportedOriginSpx` untuk SPX).
-- Tipe `EstimateCourier` mengecualikan `spx`: estimasi single-courier SPX ditolak `400 Invalid courier` saat dites live 2026-09-25 (docs resmi kini mencantumkan `spx`, belum dicek ulang) — ambil dari `courier: "all"`.
+- Tipe `EstimateCourier` mencakup `spx` (single-courier `spx` → 200, sandbox 2026-11-19) dan mengecualikan `Ninja`. `estimatePublic({ withCourierServices: true })` menambah `JTEco`; pesan J&T ECO dengan `eco: true` pada order `JT`.
 - `createOrder()` mempertahankan envelope: order ada di `.data[]`, sedangkan `.batch_id` dan `.errors` tetap tersedia untuk unpaid/partial failure.
 
 **Belum di-handle (sengaja — logika app-mu):** caching GET, retry/backoff, queue create shipment,
@@ -213,7 +216,7 @@ const created = await mgt.createOrder({
 ### 8) Request & Polling Cetak Label PDF Asinkron
 
 ```ts
-// 1. Request cetak label: SATU orderId per request (HTTP 202, status PENDING, tanpa downloadUrl)
+// 1. Request cetak label: SATU orderId per request (2xx, status PENDING, tanpa downloadUrl)
 const reqLabel = await mgt.requestLabelGeneration({
   orderId: "ORDER-JNE-001",
   courier: "JNE",

@@ -9,16 +9,19 @@ Dibagi: **(A) kode error resmi API**, **(B) error API terkait perilaku**, **(C) 
 
 ## A. Kode error resmi API
 
-Docs resmi mendefinisikan kode berikut (biasanya di body `message`/`errors` saat `success:false`):
+Docs resmi v2 (2026-11-19) membedakan galat lewat **HTTP status + `message`/`field`/`code`**. Kode `X000`–`X003`
+yang dicatat repo ini sampai 0.4.0 **tidak ada** di docs v2 maupun di halaman `/docs/v1` saat ini.
 
-| Kode | Arti | Penanganan |
-|------|------|------------|
-| `X000` | Ada parameter wajib yang tidak dikirim | Perbaiki payload; validasi param wajib sebelum kirim. |
-| `X001` | `secret_key` tidak dikenal / tidak valid / **kadaluarsa** | Fatal config — stop, minta perbarui API key. |
-| `X002` | `secret_key` tidak valid untuk **domain** ini | Pakai key Developer/Universal (bebas domain) atau daftarkan domain. |
-| `X003` | User `token` tidak dikenal / tidak valid / kadaluarsa | Refresh/perbaiki user token. |
+| Status / kode | Arti | Penanganan |
+|---------------|------|------------|
+| `403 {"message":"Not allowed"}` | Key tidak dikenal/nonaktif, key tanpa permission endpoint, IP di luar allowlist key, atau endpoint whitelist (dicek live sandbox 2026-11-19) | Fatal config — stop, periksa key (sandbox ≠ produksi), permission, IP (minta whitelist ke CS). Client: `isNotAllowed(e)`. |
+| `400` + `field` / `message` | Validasi: param wajib hilang, format salah, nilai di luar batas | Perbaiki payload; jangan retry tanpa perubahan. Cocokkan `field`/status, bukan teks (pesan bisa ID/EN). |
+| `422` | Validasi `PUT /address/{id}`, skor penerima (`search`), simulasi, `IDEMPOTENCY_KEY_REUSED` | Perbaiki input. |
+| `200` + `success:false` | `DELETE /order` tanpa order yang cocok (`"Orders already deleted"`, JNE/SiCepat/Sap/iDexpress/JT) | Cek `courier` (wajib selain JNE) dan id. |
+| `405` | Method salah (mis. `GET` ke `getPerformancePublic`) | Pakai method yang benar. |
+| `500 InternalError` | Body bukan JSON, atau tipe salah (mis. `phone` dropshipper berupa number; `search` dropshipper berisi `(`) | Kirim JSON valid & string. |
 | `409 Conflict` | Konkurensi batch **JT Premium / SiCepat** — ada proses batch berjalan | Jangan kirim batch paralel; gabungkan ke 1 batch, atau antre & retry setelah batch sebelumnya selesai. *(Ninja discontinued)* |
-| `429 Too Many Requests` | Rate limit async label generation terlampaui (maks 8 aksi per menit) | Terapkan queue/rate-limiter di aplikasi klien, tunggu 60 detik sebelum request cetak berikutnya. |
+| `429 Too Many Requests` | Batas cetak label (8 aksi Print / 60 detik, dibagi dengan Seller Web) atau batas harian skor penerima (produksi) | Queue/rate-limiter; label tunggu 60 detik, skor penerima tunggu tengah malam WIB. |
 
 ### A1a. Idempotency (`POST /order` dengan header `idempotencyKey`)
 
@@ -37,7 +40,7 @@ Bedakan 409 idempotency dari 409 konkurensi batch lewat field `code`; 409 konkur
 | Respon | Kapan | Penanganan |
 |--------|-------|------------|
 | `400 {"success":false,"message":"Courier is not available","code":"COURIER_DISABLED"}` | `courier=Ninja` di estimasi (Ninja discontinued 1 Sept 2026) — docs resmi | Hapus kurir dari opsi; jangan retry. |
-| `400 {"success":false,"message":"Invalid courier"}` | `courier=<nama>` di estimasi tidak cocok **persis** dengan nama shipment (`SAP`, `sap`, `jt` ditolak; `Sap`, `JT` diterima) dan **semua ejaan SPX** — teramati live 2026-09-25 | Pakai nama shipment persis ([02](02-couriers-and-rules.md) §1); ambil tarif SPX dari `courier=all`. Jangan retry. |
+| `400 {"success":false,"message":"Invalid courier"}` | `courier=<nama>` tidak cocok **persis** dengan nama shipment (`SAP`, `sap`, `jt` ditolak; `Sap`, `JT`, `spx` diterima — sandbox 2026-11-19), atau dikirim lebih dari sekali | Pakai nama shipment persis ([02](02-couriers-and-rules.md) §1). Jangan retry. |
 
 ### A3. COD Pos Indonesia tidak tersedia untuk akun (HTTP `403`)
 
@@ -45,7 +48,18 @@ Bedakan 409 idempotency dari 409 konkurensi batch lewat field `code`; 409 konkur
 |--------|-------|------------|
 | `403 {"success":false,"message":"Pos Indonesia COD is not available for this account","status":"new_seller\|insufficient\|blocked","deliveredRate":N,"minimumDeliveredRate":82}` | `POST /order` COD dengan `courier:"pos"` saat delivered rate akun di bawah ambang — docs resmi | Bedakan lewat `status`; tawarkan non-COD atau kurir lain; jangan retry. Detail di [02](02-couriers-and-rules.md) §3.3. |
 
-> `409` dan `429` bukan kode `X*` — keduanya HTTP status dengan `success:false` + `message` (lihat [01](01-api-reference.md)).
+> Tidak ada kode `X*` di docs v2 — `403`, `409`, `429` adalah HTTP status dengan `success:false` + `message` (lihat [01 §12](01-api-reference.md)).
+
+### A4. Respons "sukses" yang tidak berarti berhasil
+
+| Endpoint | Jebakan | Yang dicek |
+|----------|---------|------------|
+| `POST /order` | `200 success:true` = batch diproses, bukan semua order terkirim | Per order: `status`, `cnote_no`, `isPaid`, `error`; dan `ordersClosedDestination` |
+| `DELETE /order` | `200 success:true` bisa menghapus 0/sebagian | `deletedCount`, `deletedOrderIds` |
+| `DELETE /batch` | `200 success:true` bahkan bila tidak ada yang terhapus | `deletedCount`, `unDeletedCount`, `totalCount` |
+| `GET /label-generation/{id}` | `FAILED` tetap `200 success:true` | `data.status`, `errorMessage` |
+| `POST /order/pay-unpaid` | JNE/SiCepat/Sap/iDexpress/JT: tidak ada yang perlu dibayar → `200 data:0` | `data` (jumlah) / `cnote_no`; client `paidResult()` |
+| `GET /getReceiverScoreByNumberUser` | Nomor tanpa riwayat tetap `200` | `summary.average_number === null` |
 
 ## B. Error dari API Mengantar (perilaku, via plugin)
 
@@ -102,8 +116,8 @@ Plugin memblokir create shipment bila salah satu gagal — replikasikan validasi
 1. Network/timeout/5xx/JSON-invalid   → retry dengan backoff. POST /order: kirim header idempotencyKey + body sama persis
                                         (§A1a). Replay 5xx (Idempotent-Replayed: true) jangan diulang dengan kunci sama:
                                         cek GET /order, kirim order yang kurang dengan kunci baru.
-2. success:false + X001/X002/X003     → fatal config error (key/domain/token), stop, alert admin.
-3. success:false + X000               → parameter wajib hilang; perbaiki payload, jangan retry buta.
+2. 403 "Not allowed"                  → fatal config error (key salah lingkungan/nonaktif, permission, IP, whitelist), stop, alert admin.
+3. 400 + field / message              → validasi; perbaiki payload, jangan retry buta (cocokkan field/status, bukan teks).
 3b. 400 Invalid courier / COURIER_DISABLED → nilai courier salah/nonaktif; perbaiki mapping, jangan retry.
 3c. 403 + status new_seller/insufficient/blocked (COD pos) → jangan retry; simpan alasan + deliveredRate,
     matikan COD pos di kebijakan kurir, tawarkan non-COD/kurir lain ([02](02-couriers-and-rules.md) §3.3).

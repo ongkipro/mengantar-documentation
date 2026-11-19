@@ -66,7 +66,7 @@ Produk utama repo ini:
 - **Acceptance:** `docs/01-api-reference.md`, `docs/08-error-catalog.md`, `docs/09-curl-examples.md`, dan examples README mencantumkan pay-unpaid flow.
 
 ### REQ-7 — Pickup time constraints
-- **Statement:** Ketika membuat slot pickup via `POST /time`, maka format `date` harus `mm-dd-yyyy`, `time` harus slot 9:00-18:00, dan jadwal harus minimal 90 menit dari waktu saat ini.
+- **Statement:** Ketika membuat slot pickup via `POST /time`, maka format `date` harus `MM-DD-YYYY` (atau Unix ms number), `time` harus jam dua digit `09:00`–`20:00`, dan jadwal yang dipakai create order harus minimal 90 menit dari waktu saat ini.
 - **Acceptance:** `docs/09-curl-examples.md`, `spec/openapi.yaml`, and `examples/mengantar-client.ts` encode date format/slot.
 
 ### REQ-8 — Sandbox traps visibility

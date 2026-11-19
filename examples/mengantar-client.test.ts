@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isNotAllowed,
   isRateAvailable,
+  paidResult,
   MengantarClient,
   MengantarError,
   posCodIneligibility,
@@ -337,4 +339,73 @@ test("a replayed 5xx keeps idempotentReplayed and an empty body code does not hi
     .then(() => null, (e: unknown) => e);
   assert.ok(e2 instanceof MengantarError);
   assert.equal(e2.code, "409");
+});
+
+// ── Docs v2.0.0 sync (2026-11-19) ────────────────────────────────────────────
+
+const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+
+test("isNotAllowed recognises the uniform v2 403 and nothing else", async () => {
+  const deny = new MengantarClient({ apiKey: "k", fetchImpl: async () => new Response(JSON.stringify({ success: false, message: "Not allowed" }), { status: 403 }) });
+  await assert.rejects(deny.listOrigins(), (e: unknown) => isNotAllowed(e) && (e as MengantarError).code === undefined);
+  const pos = new MengantarError("x", 403, { success: false, message: "Pos Indonesia COD is not available for this account", status: "blocked" });
+  assert.equal(isNotAllowed(pos), false);
+  assert.equal(isNotAllowed(new MengantarError("x", 400, { message: "Not allowed" })), false);
+});
+
+test("X000-X003 text in a message is no longer turned into a code", async () => {
+  const c = new MengantarClient({ apiKey: "k", fetchImpl: async () => new Response(JSON.stringify({ success: false, message: "X001 key expired" }), { status: 400 }) });
+  await assert.rejects(c.listOrigins(), (e: unknown) => e instanceof MengantarError && e.code === undefined);
+});
+
+test("pickup slots are two-digit and listPickupTimes sends optional address + courier", async () => {
+  const urls: string[] = [];
+  const c = new MengantarClient({ apiKey: "k", fetchImpl: async (u) => { urls.push(String(u)); return ok({ success: true, data: [] }); } });
+  await c.addPickupTime("addr", "2026-11-30", "09:00");
+  await c.listPickupTimes();
+  await c.listPickupTimes("addr", "JNE");
+  assert.match(urls[1], /\/time$/);
+  assert.match(urls[2], /\/time\?address=addr&courier=JNE$/);
+});
+
+test("listOrigins forwards search/paging and refuses page without size", async () => {
+  const urls: string[] = [];
+  const c = new MengantarClient({ apiKey: "k", fetchImpl: async (u) => { urls.push(String(u)); return ok({ success: true, data: [] }); } });
+  await c.listOrigins({ keyword: "gudang", page: 1, size: 20 });
+  assert.match(urls[0], /\/address\?keyword=gudang&page=1&size=20$/);
+  assert.throws(() => c.listOrigins({ page: 1 }), /page dan size/);
+});
+
+test("iterateOrders follows nextCursor until it is empty", async () => {
+  const urls: string[] = [];
+  const pages = [
+    { success: true, data: [{ _id: "a" }, { _id: "b" }], nextCursor: "C1" },
+    { success: true, data: [{ _id: "c" }], nextCursor: "" },
+  ];
+  const c = new MengantarClient({ apiKey: "k", fetchImpl: async (u) => { urls.push(String(u)); return ok(pages[urls.length - 1]); } });
+  const ids: string[] = [];
+  for await (const o of c.iterateOrders({ courier: "JT", size: 2 })) ids.push(o._id);
+  assert.deepEqual(ids, ["a", "b", "c"]);
+  assert.doesNotMatch(urls[0], /cursor=/);
+  assert.match(urls[1], /cursor=C1/);
+});
+
+test("deleteOrders / deleteBatch return the full body so deletedCount can be checked", async () => {
+  const c = new MengantarClient({ apiKey: "k", fetchImpl: async () => ok({ success: true, data: {}, message: "0 orders are deleted from 2 selected orders", deletedCount: 0, deletedOrderIds: [] }) });
+  const r = await c.deleteOrders(["x", "y"], "JT");
+  assert.equal(r.deletedCount, 0);
+  const b = new MengantarClient({ apiKey: "k", fetchImpl: async () => ok({ success: true, data: { isDeleted: true }, deletedCount: 1, unDeletedCount: 2, totalCount: 3 }) });
+  assert.equal((await b.deleteBatch("B", "JT")).unDeletedCount, 2);
+});
+
+test("paidResult normalises both official pay-unpaid shapes", async () => {
+  const jt = new MengantarClient({ apiKey: "k", fetchImpl: async () => ok({ success: true, data: 2, cnote_no: ["JT1", "JT2"] }) });
+  assert.deepEqual(paidResult(await jt.payUnpaid("b", "JT")), { count: 2, cnote_no: ["JT1", "JT2"] });
+  const lion = new MengantarClient({ apiKey: "k", fetchImpl: async () => ok({ success: true, data: { cnote_no: ["L1"], count: 1 } }) });
+  assert.deepEqual(paidResult(await lion.payUnpaid("b", "lion")), { count: 1, cnote_no: ["L1"] });
+});
+
+test("a body that fails mid-read is a MengantarError, not a raw exception", async () => {
+  const c = new MengantarClient({ apiKey: "k", fetchImpl: async () => new Response(new ReadableStream({ start(ctl) { ctl.error(new Error("reset")); } }), { status: 200 }) });
+  await assert.rejects(c.listOrigins(), (e: unknown) => e instanceof MengantarError && e.status === 0);
 });

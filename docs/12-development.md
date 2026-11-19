@@ -41,7 +41,7 @@ Urutan prioritas saat ada konflik:
 4. `docs/01-api-reference.md` untuk penjelasan manusia.
 5. `examples/mengantar-client.ts` untuk implementasi helper typed.
 
-Pengingat update: jalankan `make docs-watch` (membandingkan <https://api-public.mengantar.com/docs/> dengan `docs/official-snapshot/`); jika exit 1, sinkronkan lalu `bash scripts/docs-watch.sh --update`.
+Pengingat update: jalankan `make docs-watch` (membandingkan `https://api-public.mengantar.com/docs/llms.txt` + semua halaman Markdown EN/ID dengan `docs/official-snapshot/`); exit 1 = berubah → `node scripts/docs-watch.mjs --update`, baca diff snapshot, sinkronkan; exit 2 = gagal fetch.
 
 Jika satu fakta berubah, sinkronkan semua tempat yang memuat fakta itu: `01`, `07`, `spec`, `examples`, `requests.http`, dan `README` bila masuk indeks/summary.
 
@@ -55,10 +55,11 @@ Jika satu fakta berubah, sinkronkan semua tempat yang memuat fakta itu: `01`, `0
 - `COD` pada `orders[]` berarti total tagih COD = nilai barang + ongkir + fee COD.
 - `origin_id` estimasi = wilayah `_id`, biasanya `PICKUP_AUTOFILL` dari pickup address.
 - `pickup.address_id` untuk `POST /order` dan `address_id` untuk `POST /time` = `_id` alamat pickup dari `GET /address`.
-- `POST /time` memakai `date` format `mm-dd-yyyy`, slot jam `9:00`-`18:00`, minimal 90 menit dari sekarang.
+- `POST /time` memakai `date` `MM-DD-YYYY` (atau Unix ms number), jam dua digit `09:00`–`20:00`; batas 90 menit dicek saat `POST /order`.
 - `POST /time` mengembalikan satu objek slot di `data`; `GET /time` mengembalikan array.
 - `unsupported:true` (dan `unsupportedOriginSpx:true` pada entri `spx`) menyembunyikan kurir; `unsupported_cod:true` menyembunyikan COD untuk kurir tersebut.
-- Key estimasi (`SAP`, `SAPLite`, `spx`, …) ≠ nama shipment (`Sap`, `spx`, …); estimasi single-courier case-sensitive; SPX ditolak `400 Invalid courier` saat dites live 2026-09-25 (docs resmi kini mencantumkan `spx`, belum dicek ulang).
+- Key estimasi (`SAP`, `SAPLite`, `JTEco`, …) ≠ nama shipment (`Sap`, `JT` + `eco`, …); estimasi single-courier case-sensitive (`spx` → 200, sandbox 2026-11-19).
+- Penolakan key/permission/IP/whitelist = `403 Not allowed`; `success:true` pada create/delete tidak berarti semua berhasil.
 - `POST /order` menerima batch; jangan panggil paralel untuk JT Premium dan SiCepat (Ninja discontinued per 1 Sept 2026).
 - Pertahankan envelope create-order: `data[]`, `batch_id`, dan `errors[]` semuanya bagian kontrak.
 - Saldo kurang menghasilkan response sukses dengan `isPaid=false` dan `cnote_no=null`; recovery via

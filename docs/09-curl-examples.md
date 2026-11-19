@@ -17,7 +17,7 @@ export MGT_PREFIX="$MGT_BASE/api/public/$MGT_KEY"
 ```bash
 curl -sS "$MGT_PREFIX/order/estimate?origin_id=5fc62f63f8f44b34aa4c0e0a&destination_id=5fc62de8f8f44b34aa4bdc58&courier=all&weight=1" | jq
 ```
-`success:true` → key valid. `success:false` (mis. `X001`) → key salah / tidak punya akses.
+`success:true` → key valid. `403 {"success":false,"message":"Not allowed"}` → key salah lingkungan / nonaktif, tanpa permission, atau IP tidak diizinkan.
 
 ## 2. Cari data wilayah
 ```bash
@@ -42,7 +42,7 @@ curl -sS -X POST "$MGT_PREFIX/address" \
     "PICKUP_PIC":"Budi",
     "PICKUP_NAME":"Gudang Utama"
   }' | jq
-# Tambahkan "_id":"PICKUP_ADDRESS_ID" untuk update
+# Mengubah alamat: PUT /address/PICKUP_ADDRESS_ID (POST hanya menambah)
 ```
 
 ## 5. Jadwal pickup
@@ -50,7 +50,7 @@ curl -sS -X POST "$MGT_PREFIX/address" \
 # List slot untuk satu alamat pickup
 curl -sS "$MGT_PREFIX/time?address=PICKUP_ADDRESS_ID" | jq
 
-# Tambah slot  ⚠️ date = mm-dd-yyyy (bulan-tanggal-tahun), time = 9:00..18:00,
+# Tambah slot  ⚠️ date = MM-DD-YYYY (atau Unix ms number), time = 09:00..20:00 (dua digit; "9:00" ditolak),
 # dan jadwal harus minimal 90 menit dari sekarang.
 curl -sS -X POST "$MGT_PREFIX/time" \
   -H "Content-Type: application/json" \
@@ -62,7 +62,7 @@ curl -sS -X POST "$MGT_PREFIX/time" \
 # Semua kurir
 curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&courier=all&weight=2" | jq '.data'
 
-# Tarif SPX: ambil dari courier=all (live 2026-09-25: courier=spx/SPX/... → 400 "Invalid courier"; docs resmi kini mencantumkan spx).
+# Tarif SPX: courier=spx kini 200 (sandbox 2026-11-19), atau ambil dari courier=all. Entri spx membawa pickupSchedule.
 # Buang bila unsupported / unsupportedOriginSpx bernilai true.
 curl -sS "$MGT_PREFIX/order/estimate?origin_id=ORIGIN_WILAYAH_ID&destination_id=DESTINATION_WILAYAH_ID&courier=all&weight=1&COD_AMOUNT=100000" \
   | jq '.data.spx | select(. != null) | {price, estimate_delivery, unsupported, unsupported_cod, unsupportedOriginSpx, unsupportedPickup}'
@@ -207,7 +207,7 @@ curl -sS -X POST "$MGT_PREFIX/label-generation" \
     "courier":"JNE",
     "format":"thermal-10x15"
   }' | jq
-# Response: HTTP 202 {"success":true,"data":{"labelGenerationId":"LABEL_GEN_ID","status":"PENDING"}} — tidak pernah ada downloadUrl di sini
+# Response: 2xx {"success":true,"data":{"labelGenerationId":"LABEL_GEN_ID","status":"PENDING"}} — tidak pernah ada downloadUrl di sini
 
 # Cek status & ambil link unduh PDF (Google Cloud Storage signed URL 15 menit)
 curl -sS "$MGT_PREFIX/label-generation/LABEL_GEN_ID" | jq

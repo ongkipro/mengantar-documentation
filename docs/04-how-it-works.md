@@ -130,10 +130,10 @@ Mengantar kini mendukung pengiriman webhook langsung ke server aplikasi saat sta
 Untuk pencetakan label massal / thermal tanpa membebani thread sinkron:
 
 1. Integrator mengirim `POST /label-generation` dengan 1 `orderId`, `courier`, dan `format`.
-2. API mengembalikan HTTP 202 dengan `labelGenerationId` dan status `PENDING`.
+2. API mengembalikan 2xx dengan `labelGenerationId` dan status `PENDING` (tanpa `downloadUrl`).
 3. Worker background Mengantar merender PDF dan mengunggah ke cloud storage.
 4. Integrator melakukan polling read-only ke `GET /label-generation/{id}` sampai status menjadi `COMPLETED`.
-5. Ambil `downloadUrl` (signed URL berdurasi 15 menit) dan simpan / cetak file PDF label.
+5. Ambil `downloadUrl` (berlaku 15 menit; tiap poll memberi link baru) dan simpan / cetak file PDF label. `FAILED` tetap 200 — baca `data.status`.
 
 ## 6. Endpoint internal (AJAX) — peta orkestrasi
 

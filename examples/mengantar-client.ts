@@ -4,8 +4,8 @@
  *
  * ⚠️  SERVER-ONLY. API key ada di PATH URL — JANGAN import file ini ke bundle browser.
  *
- * Kontrak mengikuti docs/01-api-reference.md & spec/openapi.yaml (sinkron dengan api-public.mengantar.com/docs).
- * Casing param disengaja: `COD_AMOUNT` (huruf besar), nama kurir persis, `date` = mm-dd-yyyy.
+ * Kontrak mengikuti docs/01-api-reference.md & spec/openapi.yaml (sinkron dengan docs resmi v2.0.0, 2026-11-19).
+ * Casing param disengaja: `COD_AMOUNT` (huruf besar), nama kurir persis, `date` = MM-DD-YYYY, jam slot dua digit (`09:00`).
  */
 
 // ── Tipe dasar ──────────────────────────────────────────────────────────────
@@ -20,20 +20,15 @@ export type Courier =
   | "anteraja"
   | "pos"
   /**
-   * SPX Express (Shopee Express). Tercantum di docs resmi (cek 2026-11-11) untuk estimate, create order,
-   * pay-unpaid & simulasi; belum teramati di create-order live. Live 2026-09-25 estimasi single-courier SPX
-   * menjawab `400 Invalid courier` — tarifnya diambil dari `estimate({ courier: "all" })` sampai terbukti lain.
+   * SPX Express (Shopee Express). Docs resmi v2: estimate, create order, pay-unpaid, delete, simulasi.
+   * Estimasi single-courier `spx` → 200 (sandbox 2026-11-19). Sandbox: hanya area Jakarta.
    */
   | "spx"
   /** @deprecated Discontinued per 1 September 2026. */
   | "Ninja";
 
-/**
- * Nilai `courier` untuk estimasi single/all. `spx` dikecualikan: estimasi single-courier menolak semua ejaan SPX
- * dengan `400 Invalid courier` (teramati live 2026-09-25) — ambil tarif SPX dari `all`. Docs resmi (cek 2026-11-11)
- * kini mencantumkan `spx` untuk estimasi; buka pengecualian ini hanya setelah satu panggilan live berhasil.
- */
-export type EstimateCourier = Exclude<Courier, "spx"> | "all";
+/** Nilai `courier` untuk estimasi single/all (Ninja → 400 COURIER_DISABLED). */
+export type EstimateCourier = Exclude<Courier, "Ninja"> | "all";
 export type Volume = "volumeMotor" | "volumeMobil" | "volumeTruck";
 
 /** Amplop response standar Mengantar. */
@@ -53,7 +48,10 @@ export class MengantarError extends Error {
     message: string,
     readonly status: number,
     readonly body: unknown,
-    /** Kode resmi bila terdeteksi: field `code` body (mis. "COURIER_DISABLED", "IDEMPOTENCY_REQUEST_IN_PROGRESS"), X000–X003, "409", "429". */
+    /**
+     * Kode mesin bila ada: field `code` body (mis. "COURIER_DISABLED", "IDEMPOTENCY_REQUEST_IN_PROGRESS"), atau "409"/"429".
+     * Docs resmi v2 tidak memakai X000–X003; key/izin/IP/whitelist yang ditolak selalu 403 "Not allowed" (lihat isNotAllowed()).
+     */
     readonly code?: string,
     /** Header `Retry-After` (detik), mis. pada 409 IDEMPOTENCY_REQUEST_IN_PROGRESS. */
     readonly retryAfter?: string,
@@ -174,7 +172,12 @@ export class MengantarClient {
     } catch (e) {
       throw new MengantarError(`Request gagal: ${(e as Error).message}`, 0, null);
     }
-    const text = await res.text();
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (e) {
+      throw new MengantarError(`Request gagal: ${(e as Error).message}`, 0, null);
+    }
     let body: unknown = text;
     try { body = text ? JSON.parse(text) : {}; } catch { /* biarkan string */ }
     const env = body as Envelope<T>;
@@ -182,7 +185,7 @@ export class MengantarClient {
       const msg = env?.errorsFront || env?.message || `HTTP ${res.status}`;
       // A body `code` (idempotency, COURIER_DISABLED, ...) is more specific than the bare status.
       const bodyCode = typeof env?.code === "string" && env.code ? env.code : undefined;
-      const code = bodyCode ?? (res.status === 409 ? "409" : res.status === 429 ? "429" : detectErrorCode(env));
+      const code = bodyCode ?? (res.status === 409 ? "409" : res.status === 429 ? "429" : undefined);
       throw new MengantarError(msg, res.status, body, code, res.headers.get("Retry-After") ?? undefined,
         res.headers.get("Idempotent-Replayed") === "true");
     }
@@ -203,11 +206,20 @@ export class MengantarClient {
     return this.request<AddressSearchItem[]>("GET", this.keyed(`/address/search${this.qs({ keyword })}`));
   }
 
-  listOrigins() {
-    return this.request<PickupAddress[]>("GET", this.keyed(`/address`));
+  /** List alamat pickup. Tanpa parameter → semua. `page` & `size` hanya berlaku bila keduanya dikirim (size ≤ 100). */
+  listOrigins(params: { keyword?: string; page?: number; size?: number; fields?: string } = {}) {
+    if ((params.page === undefined) !== (params.size === undefined)) {
+      throw new Error("listOrigins: page dan size harus dikirim bersama (API mengabaikan salah satunya)");
+    }
+    return this.request<PickupAddress[]>("GET", this.keyed(`/address${this.qs(params)}`));
   }
 
-  /** Buat / update alamat pickup. Sertakan `_id` untuk update in-place. */
+  /** Tambah alamat pickup (`POST /address`). Untuk mengubah alamat yang sudah ada, pakai updateAddress(). */
+  addOrigin(input: PickupAddressInput) {
+    return this.upsertOrigin(input);
+  }
+
+  /** @deprecated Nama lama — sama dengan addOrigin(). Docs v2: POST /address hanya menambah; ubah alamat lewat updateAddress(). */
   upsertOrigin(input: PickupAddressInput) {
     return this.request<PickupAddress>("POST", this.keyed(`/address`), {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -223,8 +235,8 @@ export class MengantarClient {
     });
   }
 
-  /** Update spesifik alamat pickup by ID. */
-  updateAddress(id: string, input: Partial<PickupAddressInput>) {
+  /** Update alamat by ID (`PUT /address/{id}`): hanya field yang dikirim; wilayah diganti lewat PICKUP_AUTOFILL. */
+  updateAddress(id: string, input: PickupAddressUpdateInput) {
     return this.request<PickupAddress>("PUT", this.keyed(`/address/${id}`), {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(input),
@@ -244,11 +256,19 @@ export class MengantarClient {
 
   // ── 2. Jadwal pickup ───────────────────────────────────────────────────────
 
-  listPickupTimes(addressId: string) {
-    return this.request<PickupTime[]>("GET", this.keyed(`/time${this.qs({ address: addressId })}`));
+  /**
+   * Jadwal pickup mendatang. Tanpa `addressId` → semua alamat. `courier` menyembunyikan slot yang tak bisa dipakai
+   * kurir itu (JNE: tanpa Minggu & 19/20; anteraja: tanpa Minggu; iDexpress: tanpa 20:00 & hanya > 90 menit).
+   * `date` di respons = Unix ms dengan jam Jakarta ditulis seolah UTC → baca dengan getUTC*().
+   */
+  listPickupTimes(addressId?: string, courier?: Exclude<Courier, "Ninja">) {
+    return this.request<PickupTime[]>("GET", this.keyed(`/time${this.qs({ address: addressId, courier })}`));
   }
 
-  /** Tambah slot pickup. `date` menerima Date/`YYYY-MM-DD`/`mm-dd-yyyy`. */
+  /**
+   * Tambah slot pickup. `date` menerima Date/`YYYY-MM-DD`/`MM-DD-YYYY`. Setiap panggilan membuat slot BARU
+   * (meski sama) — simpan & pakai ulang `_id`. Batas 90 menit dicek saat createOrder, bukan di sini.
+   */
   addPickupTime(addressId: string, date: Date | string, time: PickupTimeSlot) {
     return this.request<PickupTime>("POST", this.keyed(`/time`), {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -259,7 +279,8 @@ export class MengantarClient {
   // ── 3. Estimasi ongkir ─────────────────────────────────────────────────────
 
   /**
-   * Cek ongkir akun. courier default "JNE"; "all" → map per kurir.
+   * Cek ongkir akun (dengan diskon akun). courier default "JNE"; "all" → map per kurir (+ `JTEco` bila rute punya
+   * tarif J&T ECO). Entri `spx` membawa `pickupSchedule`.
    */
   estimate(p: {
     originId: string;
@@ -282,13 +303,17 @@ export class MengantarClient {
     );
   }
 
-  /** Estimasi publik semua kurir (flat diskon 20%). TANPA prefix key. */
+  /**
+   * Estimasi publik semua kurir (diskon dasar 20%). TANPA key. `withCourierServices: true` → ikut `JTEco`.
+   * Hanya memeriksa format id: id valid yang tidak cocok alamat tetap mengembalikan tarif.
+   */
   estimatePublic(p: {
     originId: string;
     destinationId: string;
     weight?: number;
     codAmount?: number;
     isDangerousGoods?: boolean;
+    withCourierServices?: boolean;
   }) {
     return this.request<Record<string, CourierRate>>(
       "GET",
@@ -298,11 +323,12 @@ export class MengantarClient {
         weight: p.weight ?? 1,
         COD_AMOUNT: p.codAmount,
         isDangerousGoods: p.isDangerousGoods,
+        withCourierServices: p.withCourierServices,
       })}`,
     );
   }
 
-  /** Estimasi 3PL (harga standar tanpa promo). TANPA prefix key. */
+  /** Estimasi 3PL (harga standar tanpa diskon/flat). TANPA key. `null` pada flag cakupan = kurir tidak menjawab. */
   estimate3PL(p: {
     originId: string;
     destinationId: string;
@@ -320,7 +346,10 @@ export class MengantarClient {
     );
   }
 
-  /** Skor performa kurir untuk sebuah kota. `allEstimateData` = hasil estimate(courier:"all"). */
+  /**
+   * Skor performa kurir untuk sebuah kota (whitelist di produksi). `city` = CITY_NAME persis (case-sensitive),
+   * `allEstimateData` = hasil estimate({courier:"all"}) atau estimatePublic(). Pakai `bestCourier`, bukan `recommended`.
+   */
   getCourierPerformance(city: string, allEstimateData: Record<string, CourierRate>) {
     return this.request<CourierPerformance>("POST", this.keyed(`/order/getPerformancePublic`), {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -330,8 +359,22 @@ export class MengantarClient {
 
   // ── 4. Invoice / assignee ──────────────────────────────────────────────────
 
-  listInvoices(params: { page?: number; size?: number; keyword?: string; dateRange?: string; invoiceFilter?: string } = {}) {
+  /** Invoice + saldo. Untuk daftar panjang pakai `cursor` (= `nextCursor` sebelumnya); page & size ≤ 100. */
+  listInvoices(params: {
+    page?: number; size?: number; cursor?: string; keyword?: string; ids?: string;
+    dateRange?: string; invoiceFilter?: InvoiceType | "all";
+  } = {}) {
     return this.request<InvoiceEnvelope>("GET", this.keyed(`/invoices${this.qs(params)}`), { unwrap: false });
+  }
+
+  /** Iterasi semua invoice lewat cursor (tidak melewati batas page 100). */
+  async *iterateInvoices(params: Omit<Parameters<MengantarClient["listInvoices"]>[0] & object, "page" | "cursor"> = {}) {
+    let cursor: string | undefined;
+    do {
+      const res = await this.listInvoices({ ...params, cursor });
+      for (const inv of res.data ?? []) yield inv;
+      cursor = res.nextCursor || undefined;
+    } while (cursor);
   }
 
   listAssignees() {
@@ -400,37 +443,86 @@ export class MengantarClient {
     });
   }
 
+  /**
+   * Bayar order unpaid satu batch (`batch_id` = `_id` batch). `courier` WAJIB untuk selain JNE.
+   * Bentuk respons beda per kurir — pakai paidResult() untuk menormalkan ke `{ count, cnote_no }`.
+   */
   payUnpaid(batchId: string, courier?: Courier) {
-    return this.request<unknown>("POST", this.keyed(`/order/pay-unpaid`), {
+    return this.request<PayUnpaidResponse>("POST", this.keyed(`/order/pay-unpaid`), {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ batch_id: batchId, ...(courier && { courier }) }),
+      unwrap: false,
     });
   }
 
-  /** Lacak satu order (by order_id / tracking_id) atau list dengan filter. */
+  /**
+   * Lacak satu order (by order_id / tracking_id → ada `history`; `proofHistory` hanya via order_id) atau list dengan filter.
+   * Mengembalikan array `data`. Untuk `nextCursor` pakai listOrders().
+   */
   getOrders(params: OrderQuery = {}) {
     return this.request<OrderRecord[]>("GET", this.keyed(`/order${this.qs(params as Record<string, string | number | boolean | undefined>)}`));
+  }
+
+  /** Seperti getOrders() tetapi mengembalikan envelope lengkap (dengan `nextCursor`). */
+  listOrders(params: OrderQuery = {}) {
+    return this.request<OrderListEnvelope>("GET", this.keyed(`/order${this.qs(params as Record<string, string | number | boolean | undefined>)}`), { unwrap: false });
+  }
+
+  /** Iterasi semua order lewat cursor (aman melewati batas page 100 dan page×size 1500). */
+  async *iterateOrders(params: Omit<OrderQuery, "page" | "cursor" | "order_id" | "tracking_id"> = {}) {
+    let cursor: string | undefined;
+    do {
+      const res = await this.listOrders({ ...params, cursor });
+      for (const o of res.data ?? []) yield o;
+      cursor = res.nextCursor || undefined;
+    } while (cursor);
   }
 
   trackByOrderId(orderId: string) { return this.getOrders({ order_id: orderId }); }
   trackByResi(cnoteNo: string) { return this.getOrders({ tracking_id: cnoteNo }); }
 
-  /** Hapus order. Anteraja: hanya bisa 5 menit setelah dibuat. */
+  /**
+   * Hapus order (by `_id`). ⚠️ Cek `deletedCount`, bukan `success`: 200 bisa menghapus 0/sebagian.
+   * `courier` WAJIB untuk selain JNE (tanpa itu API mencari di order JNE dan tidak menghapus apa pun).
+   * Anteraja: hanya ≥ 5 menit setelah dibuat. Order hasil simulasi tidak bisa dihapus.
+   * Catatan: "Orders already deleted" (tidak ada yang cocok, JNE/SiCepat/Sap/iDexpress/JT) datang sebagai 200 success:false
+   * → dilempar sebagai MengantarError status 200.
+   */
   deleteOrders(ids: string[], courier?: Courier) {
-    return this.request<unknown>("DELETE", this.keyed(`/order`), {
+    return this.request<DeleteOrdersResult>("DELETE", this.keyed(`/order`), {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ ids, ...(courier && { courier }) }),
+      unwrap: false,
     });
   }
 
-  listBatches(params: { page?: number; size?: number; courier?: Courier } = {}) {
+  /** Hapus order by `ORDER_ID` (field `orderIds`). Aturan sama dengan deleteOrders(). */
+  deleteOrdersByOrderId(orderIds: string[], courier?: Courier) {
+    return this.request<DeleteOrdersResult>("DELETE", this.keyed(`/order`), {
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ orderIds, ...(courier && { courier }) }),
+      unwrap: false,
+    });
+  }
+
+  /** List batch (terbaru dulu; tanpa cursor, page & size ≤ 100). `batchFilter: "unpaid"` → batch untuk payUnpaid(). */
+  listBatches(params: {
+    page?: number; size?: number; courier?: Courier; dateRange?: string;
+    batchFilter?: "unpaid" | "error" | "active" | "delivered" | "undelivered" | "rts" | "reconciled";
+    keyword?: string; address_id?: string;
+  } = {}) {
     return this.request<BatchRecord[]>("GET", this.keyed(`/batch${this.qs(params)}`));
   }
 
+  /**
+   * Hapus batch (`id` = `_id` atau nomor batch). ⚠️ Cek `deletedCount`/`unDeletedCount`, bukan `success`.
+   * `courier` WAJIB untuk selain JNE.
+   */
   deleteBatch(id: string, courier?: Courier) {
-    return this.request<unknown>("DELETE", this.keyed(`/batch`), {
+    return this.request<DeleteBatchResult>("DELETE", this.keyed(`/batch`), {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ id, ...(courier && { courier }) }),
+      unwrap: false,
     });
   }
 
@@ -442,49 +534,74 @@ export class MengantarClient {
   }
 }
 
-// ── Deteksi kode error resmi dari body ──────────────────────────────────────
-function detectErrorCode(env: Envelope<unknown> | undefined): string | undefined {
-  const hay = JSON.stringify(env?.errors ?? "") + " " + (env?.message ?? "");
-  // Field `code` body sudah diutamakan oleh request(); di sini hanya kode X000–X003 dari pesan/errors.
-  return hay.match(/\bX00[0-3]\b/)?.[0];
+/**
+ * true untuk penolakan seragam docs v2: 403 `{"success":false,"message":"Not allowed"}` — key tidak dikenal/nonaktif,
+ * key tanpa permission endpoint, IP di luar allowlist key, atau endpoint whitelist. Ini masalah konfigurasi,
+ * bukan transient: jangan retry, periksa key/permission/IP. (403 lain — Pos COD, fitur Dropshipper, order milik akun
+ * lain — punya message berbeda.)
+ */
+export function isNotAllowed(error: unknown): boolean {
+  if (!(error instanceof MengantarError) || error.status !== 403) return false;
+  const msg = (error.body as { message?: unknown } | null)?.message;
+  return msg === "Not allowed";
+}
+
+/** Normalkan respons payUnpaid() (dua bentuk resmi) ke `{ count, cnote_no }`. */
+export function paidResult(res: PayUnpaidResponse): { count: number; cnote_no: string[] } {
+  if (typeof res.data === "number") return { count: res.data, cnote_no: res.cnote_no ?? [] };
+  if (res.data && typeof res.data === "object") return { count: res.data.count ?? 0, cnote_no: res.data.cnote_no ?? [] };
+  return { count: 0, cnote_no: res.cnote_no ?? [] };
 }
 
 // ── Tipe response ───────────────────────────────────────────────────────────
 
+/** Hasil cari wilayah. Field lain (kode kurir, flag cakupan) data internal — rujuk alamat dengan `_id` saja. */
 export interface AddressSearchItem {
   _id: string;
-  PROVINCE_NAME?: string; CITY_NAME?: string; DISTRICT_NAME?: string; SUBDISTRICT_NAME?: string;
-  ZIP_CODE?: string; ORIGIN_CODE?: string; DESTINATION_CODE?: string; CODE_SAP?: string;
+  COUNTRY_NAME?: string; PROVINCE_NAME?: string; CITY_NAME?: string; DISTRICT_NAME?: string; SUBDISTRICT_NAME?: string;
+  ZIP_CODE?: string; fullAddress?: string; fullAddressWithoutDistrict?: string;
+  [k: string]: unknown;
 }
 export interface PickupAddress {
   _id: string; PICKUP_NAME?: string; PICKUP_PIC?: string; PICKUP_PIC_PHONE?: string;
   PICKUP_ADDRESS?: string; PICKUP_AUTOFILL?: string; PICKUP_FULL_AUTOFILL?: string;
+  PICKUP_DISTRICT?: string; PICKUP_SUBDISTRICT?: string; PICKUP_REGION?: string; PICKUP_CITY?: string; PICKUP_ZIP?: string;
   pinpointData?: { lat: number; lng: number };
+  createdAt?: string; updatedAt?: string;
 }
+/** Koordinat pickup — wajib bila alamat dipakai untuk scheduled pickup Pos Indonesia (`pos`). */
+export type PinpointData = { lat: number; lng: number };
 export interface PickupAddressInput {
   PICKUP_AUTOFILL: string; PICKUP_ADDRESS: string; PICKUP_PIC_PHONE: string;
   PICKUP_PIC: string; PICKUP_NAME: string;
-  pinpointData?: { lat: number; lng: number };
+  pinpointData?: PinpointData | null;
   SHIPPER_ADDR1?: string; SHIPPER_AUTOFILL?: string; SHIPPER_CONTACT?: string; SHIPPER_PHONE?: string;
-  _id?: string; // untuk update
+  /** @deprecated Tidak ada di docs v2 (POST /address hanya menambah). Ubah alamat lewat updateAddress(). */
+  _id?: string;
 }
+/** Body PUT /address/{id}: semua opsional; field lain diabaikan API. */
+export type PickupAddressUpdateInput = Partial<Omit<PickupAddressInput, "_id">>;
+/** Jam pickup resmi (selalu dua digit; "9:00" ditolak API). */
 export type PickupTimeSlot =
-  | "9:00" | "10:00" | "11:00" | "12:00" | "13:00" | "14:00" | "15:00" | "16:00" | "17:00" | "18:00";
-export interface PickupTime { _id: string; date: string; time: string; }
+  | "09:00" | "10:00" | "11:00" | "12:00" | "13:00" | "14:00" | "15:00" | "16:00" | "17:00" | "18:00" | "19:00" | "20:00";
+/** `date`: ISO 8601 dari POST /time; Unix ms (jam Jakarta ditulis seolah UTC) dari GET /time. */
+export interface PickupTime { _id: string; date: string | number; time: string; isSunday?: boolean; }
 
 export interface CourierRate {
   price?: number; estimatedPrice?: number; estimatedSpecialPrice?: number;
   discount?: number; discountPercent?: number; codFee?: number; currency?: string;
   estimate_delivery?: string; estimatedDate?: string;
-  unsupported?: boolean | null; unsupported_cod?: boolean | null; coverage_cod?: boolean;
+  unsupported?: boolean | null; unsupported_cod?: boolean | null;
   isDangerousGoodsSupported?: boolean;
   discountExtraPercent?: number; discountExtra?: number;
   minimumWeightCargo?: number;
-  /** Hanya entri `spx` (teramati 2026-09-25): origin tidak dilayani SPX → perlakukan seperti `unsupported`. */
+  /** 3PL: hanya entri anteraja. */
+  isFlat?: boolean;
+  /** Tidak ada di docs resmi; teramati live pada entri `spx` (2026-09-25) → perlakukan seperti `unsupported`. */
   unsupportedOriginSpx?: boolean;
-  /** Hanya entri `spx` (teramati 2026-09-25). Arti belum dipastikan. */
+  /** Tidak ada di docs resmi; teramati live pada entri `spx` (2026-09-25). Arti belum dipastikan. */
   unsupportedPickup?: boolean;
-  /** Hanya entri `spx` (teramati 2026-09-25): tanggal `yyyy-mm-dd` → slot pickup. */
+  /** Hanya entri `spx` (docs resmi): slot hari ini s.d. lusa per tanggal `YYYY-MM-DD`; `timeEpoch` Unix detik. */
   pickupSchedule?: Record<string, { timeRangeId: number; start: string; end: string; timeEpoch: number }[]>;
 }
 
@@ -517,10 +634,21 @@ export function posCodIneligibility(error: unknown): PosCodIneligibility | null 
   return { status, deliveredRate: rate(body?.deliveredRate), minimumDeliveredRate: rate(body?.minimumDeliveredRate) };
 }
 export interface CourierPerformance {
-  couriers: { key: string; score: number }[]; bestCourier: string; recommended: string;
+  couriers: { key: string; score: number }[];
+  /** Kurir skor tertinggi yang bisa melayani rute (JNE bila tidak ada). */
+  bestCourier: string;
+  /** Terbaik di antara kurir isDangerousGoodsSupported (iDexpress bila tidak ada). */
+  recommendedDGCourier?: string;
+  /** Saat ini selalu "JNE" — pakai bestCourier. */
+  recommended: string;
 }
-export interface Invoice { _id: string; inv_number?: string; type?: string; amount?: number; total?: number; status?: string; }
-export interface InvoiceEnvelope extends Envelope<Invoice[]> { count?: number; balance?: number; }
+export type InvoiceType = "typePayment" | "typeRefund" | "typeAddBalance" | "typeWithdraw" | "typeReconciliation";
+export interface Invoice {
+  _id: string; inv_number?: string; type?: InvoiceType | string; amount?: number; total?: number;
+  status?: "statusCleared" | "statusPending" | "statusProcessing" | "statusFailed" | "statusExpired" | string;
+  courier?: string; description?: string; balanceAmount?: number; createdAt?: string; [k: string]: unknown;
+}
+export interface InvoiceEnvelope extends Envelope<Invoice[]> { count?: number; balance?: number; nextCursor?: string; }
 export interface Assignee { _id: string; name: string; email: string; }
 
 export interface DropshipperInput {
@@ -556,7 +684,8 @@ export interface LabelGenerationRequest {
 /** `data` dari POST /label-generation (client mengembalikan `data`, bukan envelope). Tidak pernah ada downloadUrl. */
 export interface LabelGenerationPendingResponse {
   labelGenerationId: string;
-  status: "PENDING";
+  /** Biasanya PENDING; job aktif yang sama bisa dipakai ulang. */
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
 }
 
 /** `data` dari GET /label-generation/{id}. downloadUrl hanya saat COMPLETED, berlaku 15 menit per polling. */
@@ -582,7 +711,10 @@ export type OrderItem = {
   parcelContent: string; weight: number; quantity: number;
   assignee?: string; destinationMark?: string; deliveryInstruction?: string;
   dontIncludeSubdistrict?: boolean; cargo?: boolean;
+  /** Hanya SiCepat (HALU) & iDexpress; tidak bisa dengan cargo/eco. */
   isDangerousGoods?: boolean;
+  /** Hanya courier JT: true → J&T ECO. Tidak bisa dengan cargo/isDangerousGoods; rute tanpa ECO → ordersClosedDestination. */
+  eco?: boolean | null;
   dropShipper?: { id: string; name: string; phone: string };
   customProducts?: { name: string; variant?: string; qty?: number; price?: number; weight?: number }[];
 } & (
@@ -590,7 +722,11 @@ export type OrderItem = {
   | { COD: number; goodsValue?: never }
 );
 export interface CreatedOrder {
+  _id?: string;
   ORDER_ID: string;
+  /** "REG", atau "ECO" untuk J&T ECO. */
+  SERVICE_CODE?: string;
+  price?: number; estimatedSpecialPrice?: number;
   cnote_no: string | null;
   status?: string;
   statusCategory?: string;
@@ -605,16 +741,64 @@ export interface CreateOrderResponse extends Envelope<CreatedOrder[]> {
   batch_id?: string;
   courier?: string;
   errors?: unknown[];
+  /** Order yang TIDAK dibuat karena tujuan tidak dilayani kurir (tidak ada di `data`). */
+  ordersClosedDestination?: unknown[];
   /** true bila ini replay dari request sebelumnya dengan idempotencyKey yang sama (bukan state terkini). */
   idempotentReplayed?: boolean;
 }
 
 export interface OrderQuery {
-  order_id?: string; tracking_id?: string; page?: number; size?: number;
+  order_id?: string; tracking_id?: string;
+  /** ≤ 100; tanpa courier page×size ≤ 1500. Untuk daftar panjang pakai cursor / iterateOrders(). */
+  page?: number;
+  /** ≤ 100 (lebih → 400). */
+  size?: number;
+  /** `nextCursor` dari respons sebelumnya; page diabaikan bila dikirim. */
+  cursor?: string;
   courier?: Courier; batch?: string; cod?: "COD" | "NON_COD";
-  status?: string; category?: string; ticketFilter?: string; receiverFilter?: string;
-  no_update_after_hour?: string; no_update_after_day?: string; dateRange?: string; reseller?: boolean;
+  status?: string; dateRange?: string;
+  /** ORDER_ID, resi, nama penerima — dibaca sebagai regex (escape `[`, `(`, `+`). */
+  keyword?: string;
+  /** @deprecated Tidak ada di docs resmi v2 (asal: plugin). */
+  category?: string;
+  /** @deprecated Tidak ada di docs resmi v2. */
+  ticketFilter?: string;
+  /** @deprecated Tidak ada di docs resmi v2. */
+  receiverFilter?: string;
+  /** @deprecated Tidak ada di docs resmi v2. */
+  no_update_after_hour?: string;
+  /** @deprecated Tidak ada di docs resmi v2. */
+  no_update_after_day?: string;
+  /** @deprecated Tidak ada di docs resmi v2. */
+  reseller?: boolean;
 }
-export interface OrderRecord { _id: string; ORDER_ID?: string; cnote_no?: string | null; status?: string; [k: string]: unknown; }
-export interface BatchRecord { _id: string; id?: string; orders?: number; delivered?: number; [k: string]: unknown; }
-export interface ReceiverScore { phone: string; [courier: string]: unknown; }
+export interface OrderRecord {
+  _id: string; ORDER_ID?: string; cnote_no?: string | null; status?: string; SERVICE_CODE?: string; isPaid?: boolean;
+  history?: { date: string; desc: string; code?: string; location?: string; proofUrl?: string; [k: string]: unknown }[];
+  proofHistory?: { status?: string; date?: string; photo?: string; video?: string }[];
+  [k: string]: unknown;
+}
+export interface OrderListEnvelope extends Envelope<OrderRecord[]> { nextCursor?: string; }
+export interface BatchRecord {
+  _id: string; id?: string; courier?: string; orders?: number; error?: number; unpaid?: number; delivered?: number;
+  active?: number; undelivered?: number; rts?: number; reconciled?: number; totalToPay?: number; totalToPaySpecial?: number;
+  orderData?: { orderId: string; cnote_no: string | null; status: string; SPECIAL_INS?: string | null }[];
+  [k: string]: unknown;
+}
+export interface DeleteOrdersResult extends Envelope<unknown> {
+  deletedCount?: number; deletedOrderIds?: string[]; deletedOrderIdsHumanReadable?: string[];
+  /** lion, anteraja, pos, spx */
+  errorMessages?: unknown[]; ordersCount?: number; totalBalanceRefund?: number;
+}
+export interface DeleteBatchResult extends Envelope<unknown> {
+  deletedCount?: number; unDeletedCount?: number; totalCount?: number; isBatchDraft?: boolean;
+  /** lion, anteraja, pos, spx */
+  errorMessages?: unknown[]; ordersCount?: number; totalBalanceRefund?: number;
+}
+/** JNE/SiCepat/Sap/iDexpress/JT: data = jumlah + cnote_no top-level; lion/anteraja/pos/spx: data = { cnote_no, count }. */
+export interface PayUnpaidResponse extends Envelope<number | { cnote_no?: string[]; count?: number }> { cnote_no?: string[]; }
+export interface ReceiverScore {
+  phone: string;
+  summary?: { average_number: number | null; average_score: string };
+  [courier: string]: unknown;
+}

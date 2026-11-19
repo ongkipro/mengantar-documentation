@@ -10,14 +10,13 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | **origin_id** (estimate) | ID **wilayah** asal (kecamatan) — same namespace dgn `destination_id`. Sumber: `GET /address/search` → `_id`, atau `PICKUP_AUTOFILL` dari alamat pickup. ⚠️ **BUKAN** `_id` objek alamat pickup. *(live-verified 2026-07-03)* |
 | **destination_id** (estimate) | ID **wilayah** tujuan (kecamatan/kelurahan). Sumber: `GET /address/search` → `_id`. Dipakai juga sbg `customerAddressDataId`. |
 | **pickup address _id** | `_id` objek alamat pickup dari `GET /address`. Dipakai utk `pickup.address_id` (create order) & `GET /time?address=`. Beda dari origin_id estimate. |
-| **courier (estimasi)** | Key kurir di response `/order/estimate` (mis. `jne`, `sicepatcargo`). Banyak varian. |
-| **courier (shipment)** | Nama kurir untuk `POST /order` — 9 nilai resmi (`JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx`; cek 2026-11-11). Create-order `spx` belum teramati live. *(Ninja discontinued per 1 Sept 2026)*. |
-| **courier key (estimasi)** | Key map respon `estimate?courier=all`, casing berbeda dari nama shipment (`JNE`, `JNECargo`, `SiCepat`, `SiCepatCargo`, `SAP`, `SAPLite`, `SapCargo`, `iDexpress`, `iDexpressCargo`, `JT`, `lion`, `anteraja`, `spx`, `pos` — live 2026-09-25). Pemetaan: [02](02-couriers-and-rules.md) §1.1. |
+| **courier (shipment)** | Nama kurir untuk `POST /order` — 9 nilai resmi docs v2 (`JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx`), case-sensitive. *(Ninja discontinued per 1 Sept 2026)*. |
+| **courier key (estimasi)** | Key map respon estimasi `all`, casing berbeda dari nama shipment: `JNE`, `JNECargo`, `SiCepat`, `SiCepatCargo`, `SAP`, `SAPLite`, `SapCargo`, `iDexpress`, `iDexpressCargo`, `JT`, `lion`, `anteraja`, `spx`, `pos` (+ `JTEco` bila ada; publik/3PL + `iDlite`). Pemetaan: [02](02-couriers-and-rules.md) §1.1. |
+| **J&T ECO** | Layanan ekonomis J&T: entri `JTEco` di estimasi, dipesan dengan `courier: "JT"` + `orders[].eco: true` (`SERVICE_CODE` `ECO`). |
 | **cnote_no** | Nomor resi / consignment note. Field utama tracking dari response create/track. |
 | **ORDER_ID** | ID order internal Mengantar (per shipment). Dipakai untuk polling tracking. |
 | **STT Number** | Surat Tanda Terima — referensi dokumen pengiriman (muncul di data export). |
-| **batch / batch_id** | Pengelompokan beberapa order yang dibuat sekaligus dalam satu request. |
-| **assignee** | Penanda kurir-lapangan/agen penjemput (opsional). |
+| **batch / batch_id** | Pengelompokan order dari satu `POST /order`. `batch_id` = `_id` (pay-unpaid, delete batch); `batch` = nomor batch (filter `GET /order`). |
 | **pickup time (time_id)** | ID slot jadwal penjemputan dari `GET /time`. |
 | **volume** | Estimasi volume kendaraan jemput: `volumeMotor` / `volumeMobil` / `volumeTruck`. |
 | **kelurahan / kecamatan** | Subdistrict / district — bagian alamat Indonesia (di API: `SUBDISTRICT_NAME` / `DISTRICT_NAME`). |
@@ -26,7 +25,9 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | **service type** | Kategori layanan kurir: `regular` / `cargo` / `lite` (menentukan batas berat). |
 | **assignee** | User tim dari `GET /my-users` (`_id`); dipasang di `orders.assignee`. |
 | **receiver score** | Skor riwayat penerima per kurir (`GET /getReceiverScoreByNumberUser`) — deteksi risiko RTS. |
-| **courier score** | Skor performa kurir untuk kota (`POST /order/getPerformancePublic`) → `bestCourier` / `recommended`. |
+| **courier score** | Skor performa kurir untuk kota (`POST /order/getPerformancePublic`) → pakai `bestCourier` (`recommended` selalu `JNE`). |
+| **cursor / nextCursor** | Pagination tepat di kedalaman berapa pun untuk `GET /order` dan `GET /invoices`; `nextCursor` kosong = halaman terakhir. |
+| **Not allowed** | Penolakan seragam `403` untuk key invalid/nonaktif, tanpa permission, IP di luar allowlist, atau endpoint whitelist. |
 | **unpaid order** | Order dibuat saat saldo kurang (`cnote_no` kosong); dibayar via `POST /order/pay-unpaid`. |
 | **RTS** | Return to Sender — paket dikembalikan ke pengirim. |
 
@@ -36,12 +37,11 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 
 | Field | Wajib | Catatan |
 |-------|:-----:|---------|
-| `courier` | ✅ | Nama shipment resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` (create-order `spx` belum teramati live **[verifikasi]**). *(Ninja discontinued)*. |
+| `courier` | ✅ | Nama shipment resmi: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` (case-sensitive). *(Ninja → 400)*. |
 | *(header)* `idempotencyKey` | — | Opsional, 1–50 karakter; kunci & body sama persis saat retry. Lihat [01 §8.1a](01-api-reference.md). |
 | `pickup` | ✅ | Objek; minimal `type` + `address_id`. |
 | `orders` | ✅ | Array, ≥ 1 item. |
-| `assignee` | ⬜ | Hanya dikirim bila terisi (dari `GET /my-users`). |
-| `dropshipper_id` | ⬜ | ID profil dropshipper dari `GET /dropshippers` bila kirim atas nama orang lain. |
+| *(dilarang)* | ❌ | `price`, `estimatedPrice`, `estimatedSpecialPrice`, `isFlat`, `discount*`, `allEstimateData`, `iDlite`, `iDliteDiscount` → `400` meski `0`/`null`/`""`. |
 
 ### `pickup`
 
@@ -49,7 +49,7 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 |-------|:-----:|---------|
 | `type` | ✅ | `scheduledPickup` atau `dropOff`. |
 | `address_id` | ✅ | `_id` alamat pickup dari `GET /address`; berbeda dari `origin_id` estimasi ongkir. |
-| `time_id` | ⚠️ | Wajib bila `type=scheduledPickup`. |
+| `time_id` | ⚠️ | Wajib bila `type=scheduledPickup`; ≥ 90 menit dari sekarang; `spx` harus di dalam slot SPX. |
 | `volume` | ⚠️ | Wajib bila `type=scheduledPickup`; `volumeMotor`, `volumeMobil`, atau `volumeTruck`. |
 
 ### Item `orders[]`
@@ -57,39 +57,49 @@ Lampiran referensi cepat: arti istilah, field mana wajib/opsional, nilai enum, d
 | Field | Wajib | Catatan |
 |-------|:-----:|---------|
 | `customerAddressDataId` | ✅ | `destination_id`. |
-| `customerAddress` | ✅ | Min. 10 karakter. |
+| `customerAddress` | ✅ | Teks alamat jalan. *(Plugin memvalidasi panjang minimum — aturan aplikasi, bukan API.)* |
 | `customerName` | ✅ | — |
-| `customerPhone` | ✅ | Digit saja, **maks 15 digit**. |
-| `weight` | ✅ | kg, min. 1. |
-| `quantity` | ✅ | — |
+| `customerPhone` | ✅ | **10–15 digit** (`62`/`+62` ikut dihitung); spasi & tanda hubung diterima. |
+| `weight` | ✅ | kg positif; `JT` ≤ 50; `anteraja`/`pos`/`spx` 1–50; = Σ(qty×weight) bila `customProducts`. |
+| `quantity` | ✅ | = Σ(qty) bila `customProducts`. |
 | `parcelContent` | ✅ | Deskripsi isi. |
-| `goodsValue` | ⚠️ | Wajib bila **non-COD** (jangan bersama `COD`). |
-| `COD` | ⚠️ | Wajib bila **COD** (jangan bersama `goodsValue`). |
-| `customProducts` | ⬜ | Array `{name, qty, price, weight, variant?}`. |
+| `goodsValue` | ⚠️ | Wajib bila `COD` kosong (number). |
+| `COD` | ⚠️ | COD: ≥ Rp1.000 (`lion` ≥ Rp10.000), ≤ maks kurir. Bila `COD` dan `goodsValue` dikirim, `COD` dipakai. |
+| `eco` | ⬜ | Hanya `JT`: `true` → J&T ECO. Tidak dengan `cargo`/`isDangerousGoods`. |
+| `isDangerousGoods` | ⬜ | JSON Boolean; hanya `SiCepat` & `iDexpress`. |
+| `cargo` | ⬜ | `JNE`, `SiCepat`, `Sap`, `iDexpress`. |
+| `dropShipper` | ⬜ | `{id, name, phone}` persis sama dengan master dropshipper. |
+| `assignee` | ⬜ | `_id` dari `GET /my-users`. |
+| `destinationMark` / `deliveryInstruction` / `dontIncludeSubdistrict` | ⬜ | Opsional. |
+| `customProducts` | ⬜ | Array `{name, qty, variant?, price?, weight?}` (`name` & `qty` wajib). |
 
 ## 3. Nilai enum
 
 | Konsep | Nilai sah |
 |--------|-----------|
-| Courier (shipment) | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` **[verifikasi]** *(Ninja discontinued per 1 Sept 2026)* |
-| Courier (estimate) param | Nama shipment persis (case-sensitive) plus `all` (**default `JNE`** bila tidak diisi). Docs resmi (2026-11-11) mencantumkan `spx`, tetapi live 2026-09-25 `courier=spx` → `400 Invalid courier`; ambil SPX dari `all` sampai dicek ulang |
+| Courier (shipment) | `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` *(Ninja discontinued per 1 Sept 2026)* |
+| Courier (estimate) param | Nama shipment persis (case-sensitive, sekali) plus `all` (**default `JNE`**). `spx` tunggal → 200 (sandbox 2026-11-19) |
 | Pickup type | `scheduledPickup`, `dropOff` |
 | Volume | `volumeMotor`, `volumeMobil`, `volumeTruck` |
-| Pickup `time` (slot) | `9:00`, `10:00`, `11:00`, `12:00`, `13:00`, `14:00`, `15:00`, `16:00`, `17:00`, `18:00` |
-| Pickup `date` format | **`mm-dd-yyyy`** (bulan-tanggal-tahun, contoh `11-27-2022`) |
-| Service type | `regular` (≤50kg), `cargo` (≤100kg), `lite` (≤0.5kg) |
+| Pickup `time` (slot) | `09:00`, `10:00`, `11:00`, `12:00`, `13:00`, `14:00`, `15:00`, `16:00`, `17:00`, `18:00`, `19:00`, `20:00` (dua digit; `9:00` ditolak) |
+| Pickup `date` format | **`MM-DD-YYYY`** (contoh `11-27-2026`) atau Unix ms sebagai number |
+| `SERVICE_CODE` | `REG`, `ECO` (J&T ECO), lainnya per kurir; `null`/absen bila tidak ada |
+| Service type [plugin] | `regular` (≤50kg), `cargo` (≤100kg), `lite` (≤0.5kg) |
 | Status shipment (sederhana) | `DELIVERED`, `RTS`, selain itu `ON GOING` |
-| Status shipment (internal) | `created`, `error`, `partial_error`, `pending_pickup_time`, `active` |
+| Status order (respons create) | `active`, `error` |
+| Status yang masih bisa dihapus | `active`, `error`, `PENDING PICKUP`, `PICKUP FAILED`, `PICKUP_FAILED_API` (atau kosong) |
+| Status app [plugin] | `created`, `error`, `partial_error`, `pending_pickup_time`, `active` |
 | payment_status / isPaid | `paid`/`true`, `unpaid`/`false` |
 | Estimasi mode | `normal` (`/order/estimate`), `3pl`, `public` |
 | `cod` filter (list order) | `COD`, `NON_COD` |
-| `category` (list order) | `collected_customer`, `yet_to_collect`, `need_attention`, `rts`, `pending_pickup`, `redelivery`, `undelivered`, `delivery_problem`, `over_sla`, `already_been_undelivered`, `been_undelivered_wo_ticket`, `been_undelivered_wo_proof` |
-| `ticketFilter` (list order) | `withticket`, `without`, `open`, `replied` |
-| `receiverFilter` (list order) | `1`–`10` |
+| `batchFilter` (list batch) | `unpaid`, `error`, `active`, `delivered`, `undelivered`, `rts`, `reconciled` |
+| `invoiceFilter` | `all`, `typePayment`, `typeRefund`, `typeAddBalance`, `typeWithdraw`, `typeReconciliation` |
+| Invoice `status` | `statusCleared`, `statusPending`, `statusProcessing`, `statusFailed`, `statusExpired` |
+| `category` / `ticketFilter` / `receiverFilter` (list order) [plugin] | Tidak ada di docs v2 — jangan diandalkan |
 | Label Generation Status | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED` |
-| Label Generation Format | `normal-1`, `normal-2`, `normal-4`, `normal-6`, `thermal-10x10`, `thermal-10x15`, `thermal-8x6`; `thermal-new-10x10`, `thermal-new-10x15` khusus JT / SPX (docs resmi 2026-11-11) |
+| Label Generation Format | `normal-1`, `normal-2`, `normal-4`, `normal-6`, `thermal-10x10`, `thermal-10x15`, `thermal-8x6`; `thermal-new-10x10`, `thermal-new-10x15` khusus JT / SPX |
 | Label Generation Request | Satu `orderId` per request; tidak ada field `type` |
-| Error code (resmi) | `X000` (param hilang), `X001` (key invalid), `X002` (key salah domain), `X003` (token invalid), `409` (konkurensi batch JT/SiCepat), `429` (rate limit cetak label), `IDEMPOTENCY_KEY_INVALID` / `IDEMPOTENCY_REQUEST_IN_PROGRESS` / `IDEMPOTENCY_REQUEST_UNRESOLVED` / `IDEMPOTENCY_KEY_REUSED` / `IDEMPOTENCY_UNAVAILABLE` (header `idempotencyKey`, [01 §8.1a](01-api-reference.md)) |
+| Galat (docs v2) | `403 Not allowed` (key/permission/IP/whitelist), `400` + `field`/`message` (validasi), `409` (konkurensi batch JT/SiCepat), `429` (cetak label 8/menit; skor penerima harian), `code`: `COURIER_DISABLED`, `IDEMPOTENCY_KEY_INVALID` / `IDEMPOTENCY_REQUEST_IN_PROGRESS` / `IDEMPOTENCY_REQUEST_UNRESOLVED` / `IDEMPOTENCY_KEY_REUSED` / `IDEMPOTENCY_UNAVAILABLE` ([01 §8.1a](01-api-reference.md)). *(`X000`–`X003` dari versi ≤ 0.4.0 tidak ada di docs v2.)* |
 
 ## 4. Opsi konfigurasi (dari konstanta plugin)
 

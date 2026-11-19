@@ -1,0 +1,110 @@
+# Mengantar Public API
+
+> Documentation for the Mengantar Public API: create shipments, check shipping fees, manage addresses and pickup times, and read orders and batches. Each page below is plain Markdown. {BASE_URL} is the host you opened (production: https://api-public.mengantar.com, sandbox: https://sandbox.mengantar.com).
+
+## Start here
+
+- [Get started](/docs/en/get-started.md): API key, base URL, permissions, and the 403 Not allowed error.
+
+## Address
+
+- [Search address data](/docs/en/search-address-data.md): GET {BASE_URL}/api/public/{API_KEY}/address/search
+- [Add user's address](/docs/en/add-users-address.md): POST {BASE_URL}/api/public/{API_KEY}/address
+- [Get user's addresses](/docs/en/get-users-addresses.md): GET {BASE_URL}/api/public/{API_KEY}/address
+- [Delete address](/docs/en/delete-address.md): DELETE {BASE_URL}/api/public/{API_KEY}/address
+- [Update address](/docs/en/update-address.md): PUT {BASE_URL}/api/public/{API_KEY}/address/{id}
+
+## Pickup time
+
+- [Add Time](/docs/en/add-time.md): POST {BASE_URL}/api/public/{API_KEY}/time
+- [Get Time](/docs/en/get-time.md): GET {BASE_URL}/api/public/{API_KEY}/time
+
+## Shipping fee
+
+- [Check Shipping Fee](/docs/en/check-shipping-fee.md): GET {BASE_URL}/api/public/{API_KEY}/order/estimate
+- [Check Shipping Fee Public](/docs/en/check-shipping-fee-public.md): GET {BASE_URL}/api/order/allEstimatePublic
+- [Check Shipping Fee 3PL](/docs/en/check-shipping-fee-3pl.md): GET {BASE_URL}/api/order/allEstimate3PL
+- [Get Courier Performance](/docs/en/get-courier-performance.md): POST {BASE_URL}/api/public/{API_KEY}/order/getPerformancePublic
+
+## Account
+
+- [Get Invoices and Balance](/docs/en/get-invoices-and-balance.md): GET {BASE_URL}/api/public/{API_KEY}/invoices
+- [Get Receiver Score Number](/docs/en/get-receiver-score-number.md): GET {BASE_URL}/api/public/{API_KEY}/getReceiverScoreByNumberUser
+- [Webhook](/docs/en/webhook.md): HOOK
+
+## Dropshipper
+
+- [Add Dropshipper](/docs/en/add-dropshipper.md): POST {BASE_URL}/api/public/{API_KEY}/dropshippers
+- [Search Dropshipper](/docs/en/search-dropshipper.md): GET {BASE_URL}/api/public/{API_KEY}/dropshippers
+
+## Batches & Orders
+
+- [Create order](/docs/en/create-order.md): POST {BASE_URL}/api/public/{API_KEY}/order
+- [Get My Users (assignee)](/docs/en/get-my-users-assignee.md): GET {BASE_URL}/api/public/{API_KEY}/my-users
+- [Pay unpaid](/docs/en/pay-unpaid.md): POST {BASE_URL}/api/public/{API_KEY}/order/pay-unpaid
+- [Get orders](/docs/en/get-orders.md): GET {BASE_URL}/api/public/{API_KEY}/order
+- [Delete orders](/docs/en/delete-orders.md): DELETE {BASE_URL}/api/public/{API_KEY}/order
+- [Get batches](/docs/en/get-batches.md): GET {BASE_URL}/api/public/{API_KEY}/batch
+- [Delete batch](/docs/en/delete-batch.md): DELETE {BASE_URL}/api/public/{API_KEY}/batch
+- [Simulate Order Status](/docs/en/simulate-order-status.md): POST {BASE_URL}/api/public/{API_KEY}/order/simulation (sandbox only)
+- [Print Label PDF (BETA)](/docs/en/print-label-pdf-beta.md): POST {BASE_URL}/api/public/{API_KEY}/label-generation
+
+
+# Bahasa Indonesia
+
+> Halaman yang sama dalam Bahasa Indonesia. Nama endpoint, nama field, kode error, dan contoh kode tidak diterjemahkan.
+
+## Updates
+
+- [What's new](/docs/en/whats-new.md): Documentation changes per version.
+
+## Mulai
+
+- [Mulai](/docs/id/get-started.md): API key, base URL, hak akses, dan error 403 Not allowed.
+
+## Address
+
+- [Search address data](/docs/id/search-address-data.md): GET {BASE_URL}/api/public/{API_KEY}/address/search
+- [Add user's address](/docs/id/add-users-address.md): POST {BASE_URL}/api/public/{API_KEY}/address
+- [Get user's addresses](/docs/id/get-users-addresses.md): GET {BASE_URL}/api/public/{API_KEY}/address
+- [Delete address](/docs/id/delete-address.md): DELETE {BASE_URL}/api/public/{API_KEY}/address
+- [Update address](/docs/id/update-address.md): PUT {BASE_URL}/api/public/{API_KEY}/address/{id}
+
+## Pickup time
+
+- [Add Time](/docs/id/add-time.md): POST {BASE_URL}/api/public/{API_KEY}/time
+- [Get Time](/docs/id/get-time.md): GET {BASE_URL}/api/public/{API_KEY}/time
+
+## Shipping fee
+
+- [Check Shipping Fee](/docs/id/check-shipping-fee.md): GET {BASE_URL}/api/public/{API_KEY}/order/estimate
+- [Check Shipping Fee Public](/docs/id/check-shipping-fee-public.md): GET {BASE_URL}/api/order/allEstimatePublic
+- [Check Shipping Fee 3PL](/docs/id/check-shipping-fee-3pl.md): GET {BASE_URL}/api/order/allEstimate3PL
+- [Get Courier Performance](/docs/id/get-courier-performance.md): POST {BASE_URL}/api/public/{API_KEY}/order/getPerformancePublic
+
+## Account
+
+- [Get Invoices and Balance](/docs/id/get-invoices-and-balance.md): GET {BASE_URL}/api/public/{API_KEY}/invoices
+- [Get Receiver Score Number](/docs/id/get-receiver-score-number.md): GET {BASE_URL}/api/public/{API_KEY}/getReceiverScoreByNumberUser
+- [Webhook](/docs/id/webhook.md): HOOK
+
+## Dropshipper
+
+- [Add Dropshipper](/docs/id/add-dropshipper.md): POST {BASE_URL}/api/public/{API_KEY}/dropshippers
+- [Search Dropshipper](/docs/id/search-dropshipper.md): GET {BASE_URL}/api/public/{API_KEY}/dropshippers
+
+## Batches & Orders
+
+- [Create order](/docs/id/create-order.md): POST {BASE_URL}/api/public/{API_KEY}/order
+- [Get My Users (assignee)](/docs/id/get-my-users-assignee.md): GET {BASE_URL}/api/public/{API_KEY}/my-users
+- [Pay unpaid](/docs/id/pay-unpaid.md): POST {BASE_URL}/api/public/{API_KEY}/order/pay-unpaid
+- [Get orders](/docs/id/get-orders.md): GET {BASE_URL}/api/public/{API_KEY}/order
+- [Delete orders](/docs/id/delete-orders.md): DELETE {BASE_URL}/api/public/{API_KEY}/order
+- [Get batches](/docs/id/get-batches.md): GET {BASE_URL}/api/public/{API_KEY}/batch
+- [Delete batch](/docs/id/delete-batch.md): DELETE {BASE_URL}/api/public/{API_KEY}/batch
+- [Simulate Order Status](/docs/id/simulate-order-status.md): POST {BASE_URL}/api/public/{API_KEY}/order/simulation (hanya sandbox)
+- [Print Label PDF (BETA)](/docs/id/print-label-pdf-beta.md): POST {BASE_URL}/api/public/{API_KEY}/label-generation
+
+## Pembaruan
+
+- [Yang baru](/docs/id/whats-new.md): Perubahan dokumentasi per versi.

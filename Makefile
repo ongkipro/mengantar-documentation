@@ -12,8 +12,8 @@ help: ## Tampilkan daftar target
 check: ## Validasi spec + link + higiene kredensial (offline, cepat)
 	@bash scripts/check-links.sh
 
-docs-watch: ## Bandingkan docs resmi Mengantar (api-public.mengantar.com/docs/) dengan snapshot; exit 1 = ada update
-	@bash scripts/docs-watch.sh
+docs-watch: ## Bandingkan docs resmi (api-public.mengantar.com/docs/llms.txt, Markdown per halaman) dengan snapshot; exit 1 = ada update
+	@node scripts/docs-watch.mjs
 
 spec-lint: ## Validasi OpenAPI spec saja
 	@python3 -c "import yaml; d=yaml.safe_load(open('spec/openapi.yaml')); print('spec OK — paths', len(d['paths']))"

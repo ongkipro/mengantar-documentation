@@ -15,7 +15,7 @@ pickup, tracking). **Ini bukan aplikasi** — tidak ada build/test/runtime. Isi:
 ├── AGENTS.md / CLAUDE.md  # file ini — kontrak agent
 ├── Makefile               # entrypoint: make check | client-check | smoke | all
 ├── docs/                  # 01–14, dokumentasi kanonik (baca sesuai kebutuhan)
-├── spec/openapi.yaml      # OpenAPI 3.1, 25 endpoint — sumber untuk codegen client
+├── spec/openapi.yaml      # OpenAPI 3.1, 25 operasi — sumber untuk codegen client
 ├── examples/              # client TypeScript no-dep (package.json + tsconfig) + cara pakai
 ├── scripts/               # check-links.sh (validasi) · smoke.sh (uji API read-only)
 ├── requests.http          # REST-client file (VS Code / JetBrains)
@@ -36,32 +36,34 @@ Tiap klaim di `docs/` ditandai tingkat kepercayaannya — **hormati tanda ini**:
 Kalau menambah fakta baru, **selalu beri tanda sumbernya**. Jangan turunkan fakta `[verifikasi]`
 menjadi fakta pasti tanpa bukti dari akun asli.
 
-**Cek update docs resmi:** `make docs-watch` (sumber: `https://api-public.mengantar.com/docs/`, snapshot di `docs/official-snapshot/`). Exit 1 = docs berubah → sinkronkan `docs/`, `spec/`, `examples/`, `requests.http`, `CHANGELOG.md`, lalu `bash scripts/docs-watch.sh --update`.
+**Cek update docs resmi:** `make docs-watch` (sumber: `https://api-public.mengantar.com/docs/llms.txt`, Markdown per halaman EN+ID; snapshot verbatim di `docs/official-snapshot/`). Exit 0 = sama, 1 = berubah, 2 = gagal fetch (tidak ada yang ditulis). Bila berubah: `node scripts/docs-watch.mjs --update`, baca `git diff docs/official-snapshot`, lalu sinkronkan `docs/`, `spec/`, `examples/`, `requests.http`, `CHANGELOG.md`. Snapshot itu sumber kebenaran untuk fakta tanpa tanda.
 
 ## Aturan emas integrasi (jangan dilanggar)
 
 1. **API key server-only.** Key ada di **path** (`/api/public/{API_KEY}/…`), bukan header. **JANGAN**
    panggil API dari browser/klien — selalu proxy lewat server. **Redaksi key** di semua log.
 2. **Casing param persis.** `COD_AMOUNT` (huruf besar), bukan `cod_amount`. Nama kurir shipment
-   persis: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` (`spx` ada di docs resmi sejak
-   cek 2026-11-11; create-order belum teramati live). Key respon `estimate?courier=all` berbeda casing (`SAP`, `SAPLite`,
-   `spx`, …) — petakan lewat `docs/02` §1.1. Estimasi single-courier SPX → `400 Invalid courier` (live 2026-09-25, belum
-   dicek ulang); ambil dari `all`, dan
-   perlakukan `unsupportedOriginSpx:true` seperti `unsupported:true`. *(Ninja discontinued per 1 Sept 2026)*.
-3. **`POST /time` → `date` format `mm-dd-yyyy`** (bulan-tanggal-tahun), bukan ISO. `time` = slot
-   tetap `9:00`–`18:00`.
+   persis: `JNE`, `SiCepat`, `Sap`, `iDexpress`, `JT`, `lion`, `anteraja`, `pos`, `spx` (create-order `spx` belum
+   teramati live). Key respon estimasi `all` berbeda casing (`SAP`, `SAPLite`, `JTEco`, `iDlite`, …) — petakan lewat
+   `docs/02` §1.1. `courier=spx` tunggal → 200 (sandbox 2026-11-19). J&T ECO = `courier:"JT"` + `eco:true`.
+   Perlakukan `unsupportedOriginSpx:true` (tidak ada di docs) seperti `unsupported:true`. *(Ninja discontinued per 1 Sept 2026)*.
+3. **`POST /time` → `date` `MM-DD-YYYY`** (atau Unix ms sebagai number), bukan ISO. `time` = dua digit
+   `09:00`–`20:00` (`9:00` ditolak). Tiap panggilan membuat slot baru — simpan & pakai ulang `_id`.
 4. **Konkurensi batch.** JT Premium / SiCepat: **satu batch per akun**, jangan `POST /order`
    paralel → `409 Conflict`. Gabung semua order ke satu request.
 5. **`data` create order = ARRAY.** Nomor resi = **`cnote_no`** (bukan `tracking_id`).
 6. **Saldo kurang → order `unpaid`** (`cnote_no` kosong). Bayar via `POST /order/pay-unpaid`.
-7. **Idempotensi & retry.** `POST /order` dengan header `idempotencyKey` (kunci & body sama persis saat retry; lihat `docs/01` §8.1a). Simpan `ORDER_ID`; polling tracking pakai backoff atau pasang Webhook resmi. Jangan retry buta pada
-   `success:false` dengan kode `X001`/`X002`/`X003` (masalah kredensial, bukan transient).
+7. **Idempotensi & retry.** `POST /order` dengan header `idempotencyKey` (kunci & body sama persis saat retry; lihat `docs/01` §8.1a). Simpan `ORDER_ID`; polling tracking pakai backoff atau pasang Webhook resmi. Jangan retry
+   `403 Not allowed` (key salah lingkungan/nonaktif, permission, IP, whitelist — masalah konfigurasi, bukan transient).
+7a. **`success:true` ≠ berhasil.** Create order: cek per order (`status`, `cnote_no`, `isPaid`) + `ordersClosedDestination`.
+   Delete order/batch: cek `deletedCount`. Label `FAILED` tetap 200. Daftar panjang: `cursor`, bukan `page` (≤ 100).
 8. **Normalisasi wilayah.** Nama provinsi/kota dari API tidak standar — lihat `docs/03-data-model.md` §6.
 
 ## Kode error (docs resmi)
 
-`X000` param wajib hilang · `X001` key invalid/expired · `X002` key salah domain · `X003` token invalid ·
-`409` konkurensi batch · `429` rate limit cetak label. Penanganan lengkap: `docs/08-error-catalog.md`.
+`403 Not allowed` key/permission/IP/whitelist · `400` + `field` validasi · `422` validasi (update alamat, skor penerima, simulasi,
+`IDEMPOTENCY_KEY_REUSED`) · `409` konkurensi batch / idempotency · `429` cetak label & skor penerima harian · `code` body
+(`COURIER_DISABLED`, `IDEMPOTENCY_*`). *(`X000`–`X003` dari ≤ 0.4.0 tidak ada di docs v2.)* Penanganan lengkap: `docs/08-error-catalog.md`.
 
 ## Peta dokumen — baca yang relevan saja
 

@@ -33,7 +33,7 @@ CI (`.github/workflows/ci.yml`) menjalankan `check` + `client-check` di tiap pus
    `docs/01`, `docs/07`, `spec/openapi.yaml`, `examples/mengantar-client.ts`, `requests.http`.
    Ubah satu → sinkronkan semua, lalu `make check && make client-check`.
 3. **Jangan pernah commit kredensial.** Hanya placeholder. `.env` sudah di-gitignore.
-4. **Casing param persis** (`COD_AMOUNT`), nama kurir persis, `date` = `mm-dd-yyyy`. Lihat AGENTS.md.
+4. **Casing param persis** (`COD_AMOUNT`), nama kurir persis, `date` = `MM-DD-YYYY`, jam pickup dua digit. Lihat AGENTS.md.
 5. **Bahasa Indonesia** untuk dokumen internal (README publik boleh campur EN). Ikuti gaya file yang disunting.
 6. **Footer** tiap file `docs/` (`<sub>… ../README.md …</sub>`) dipertahankan.
 

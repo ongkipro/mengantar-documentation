@@ -4,8 +4,44 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/). Versi mengacu 
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-19
+
+Disinkronkan dengan **docs resmi v2.0.0** (`https://api-public.mengantar.com/docs/llms.txt`, satu halaman Markdown per endpoint,
+EN + ID) dan dicek read-only di sandbox 2026-11-19.
+
 ### Added
-- `scripts/docs-watch.sh` + `make docs-watch` + `docs/official-snapshot/` (salinan teks docs resmi 2026-11-14) sebagai pengingat/detektor update dari `https://api-public.mengantar.com/docs/`.
+- `docs/official-snapshot/`: salinan **verbatim** 27 halaman × EN/ID + `llms.txt`. `scripts/docs-watch.mjs` (dipanggil `make docs-watch`)
+  membandingkan semua halaman; exit 0/1/2; `--update` semua-atau-tidak-sama-sekali; host sandbox dibandingkan sebagai info.
+- Permission key, penolakan seragam `403 Not allowed`, dan daftar endpoint whitelist ([01 §1](docs/01-api-reference.md)).
+- Parameter baru: `GET /address` (`keyword`, `page`+`size`, `fields`); `GET /time` (`courier`, `address` opsional);
+  `allEstimatePublic` (`withCourierServices` → `JTEco`); `GET /invoices` (`cursor`, `ids`); `GET /order` (`cursor`, `keyword`);
+  `GET /batch` (`batchFilter`, `keyword`, `address_id`); `orders[].eco` (J&T ECO).
+- Respons: `nextCursor`, `ordersClosedDestination`, `SERVICE_CODE`, `proofHistory`, `recommendedDGCourier`, `summary` skor penerima,
+  bentuk ganda pay-unpaid, `deletedCount`/`unDeletedCount`, webhook `service_code`, skema `Batch`.
+- Client: `isNotAllowed()`, `paidResult()`, `listOrders()` + `iterateOrders()`, `iterateInvoices()`, `deleteOrdersByOrderId()`,
+  `addOrigin()`; `listOrigins()`/`listPickupTimes()`/`listBatches()`/`listInvoices()` menerima parameter baru. 8 contract test baru (23 total)
+  + cek tipe (`"9:00"` ditolak, `spx` di estimasi, `eco`).
+- [08 §A4](docs/08-error-catalog.md): respons "sukses" yang tidak berarti berhasil.
+
+### Changed
+- **Kode error `X000`–`X003` dihapus** dari docs, spec dan client: tidak ada di docs v2 maupun `/docs/v1` saat ini, dan sandbox menjawab
+  `403 Not allowed` / `400` + pesan. `MengantarError.code` tidak lagi mencari `X00*` di teks pesan.
+- **Jam pickup `09:00`–`20:00` dua digit** (`9:00` ditolak); `date` juga boleh Unix ms (number). Add Time membuat slot baru tiap panggilan;
+  batas 90 menit dicek saat create order.
+- **Batas COD dikoreksi** ke tabel docs v2: SiCepat & J&T 5 jt (dulu 2,5 jt / 2 jt), Sap 2 jt; minimum Rp1.000 (lion Rp10.000);
+  batas berat `JT` ≤ 50, `anteraja`/`pos`/`spx` 1–50 kg.
+- **SPX:** `courier=spx` tunggal → 200 (sandbox), `EstimateCourier` kini memuat `spx`. `allEstimatePublic` (path resmi) → 200 (catatan 404 lama keliru path).
+- Dangerous Goods: hanya `SiCepat` & `iDexpress` (docs v2 konsisten; status `[verifikasi]` untuk JT dicabut).
+- `POST /address` hanya menambah; `_id` "in-place update" ditandai deprecated (pakai `PUT /address/{id}`; `updateAddress` bertipe `PickupAddressUpdateInput`).
+- `/address/search` butuh permission Create order (catatan "key tidak divalidasi" dicabut); field kode kurir internal tidak lagi didokumentasikan.
+- `invoiceFilter` resmi: `typeAddBalance` (bukan `typeAddSaldo`), plus `typeRefund`, `typeReconciliation`.
+- Label request: kode sukses 2xx (docs v2 tidak menyebut 202); `FAILED` tetap 200.
+- Parameter `GET /order` asal plugin (`category`, `ticketFilter`, `receiverFilter`, `no_update_after_*`, `reseller`) ditandai deprecated.
+- Catatan sandbox JNE/SAP (Jakarta-only) diarsipkan: tidak lagi ada di docs v2. SPX sandbox: Jakarta pickup & tujuan.
+- Client: kegagalan membaca body respons kini `MengantarError` status 0, bukan exception mentah.
+
+### Removed
+- `docs/official-snapshot/official-docs.txt` (dump HTML yang tidak lagi bisa diambil karena docs v2 dirender JavaScript).
 
 ## [0.4.0] — 2026-11-12
 

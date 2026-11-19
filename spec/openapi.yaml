@@ -1,14 +1,15 @@
 openapi: 3.1.0
 info:
   title: Mengantar Public API
-  version: 0.4.0
+  version: 0.5.0
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
   description: >-
-    Spesifikasi resmi Mengantar Public API (sinkron per 11 November 2026 dengan https://api-public.mengantar.com/docs/;
-    catatan khusus sandbox hanya tampil di https://sandbox.mengantar.com/docs/).
-    Mencakup 25 endpoint aktif: Alamat, Jadwal Pickup, Cek Ongkir (termasuk Dangerous Goods), Invoice/Saldo,
+    Spesifikasi Mengantar Public API, disinkronkan 19 November 2026 dengan docs resmi v2.0.0
+    (https://api-public.mengantar.com/docs/llms.txt — satu halaman Markdown per endpoint; snapshot di docs/official-snapshot/).
+    Galat autentikasi/izin/IP/whitelist seragam: 403 {"success":false,"message":"Not allowed"}.
+    Mencakup 25 operasi: Alamat, Jadwal Pickup, Cek Ongkir (termasuk Dangerous Goods), Invoice/Saldo,
     Dropshipper, Pembuatan (dengan header idempotencyKey) & Pelacakan Order, simulasi status order (sandbox saja),
     Cetak Label PDF Asynchronous (BETA), serta Callback Webhook resmi (HMAC-SHA256).
     Per 1 September 2026: Kurir Ninja resmi discontinued. Kurir Pos dan SPX (`spx`) tercantum di docs resmi.
@@ -24,11 +25,13 @@ paths:
   /api/public/{apiKey}/address/search:
     get:
       operationId: searchAddress
-      summary: Cari data wilayah (origin/destination code)
-      description: '{apiKey} tidak divalidasi pada route ini (legacy) — boleh string apa pun.'
+      summary: Cari data wilayah (origin/destination/customerAddressDataId)
+      description: >-
+        Permission Create order (key invalid → 403 Not allowed; teramati sandbox 2026-11-19). Maks 50 hasil, tanpa pagination.
+        Keyword tanpa kata tersisa setelah tanda baca dibuang → 200 data kosong.
       parameters:
         - $ref: '#/components/parameters/ApiKey'
-        - { name: keyword, in: query, required: true, schema: { type: string }, description: 'Province / City / District / Subdistrict / Zip' }
+        - { name: keyword, in: query, required: true, schema: { type: string }, description: 'Satu atau lebih kata; setiap kata harus cocok provinsi/kota/kecamatan/kelurahan/kode pos (case-insensitive). Hilang → 400.' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -47,7 +50,13 @@ paths:
     get:
       operationId: listOrigins
       summary: List alamat pickup (origin)
-      parameters: [{ $ref: '#/components/parameters/ApiKey' }]
+      description: Tanpa parameter mengembalikan semua alamat. Tidak ada total; page & size hanya berlaku bila keduanya dikirim.
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - { name: keyword, in: query, schema: { type: string }, description: 'Substring PICKUP_NAME (case-insensitive); pakai satu kata' }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 }, description: 'Hanya bersama size' }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100 }, description: 'Hanya bersama page' }
+        - { name: fields, in: query, schema: { type: string }, description: 'Daftar field dipisah koma tanpa spasi, mis. _id,PICKUP_NAME; _id selalu ada' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -63,7 +72,7 @@ paths:
                         items: { $ref: '#/components/schemas/PickupAddress' }
     post:
       operationId: upsertOrigin
-      summary: Buat / update alamat pickup (form; sertakan _id untuk update)
+      summary: Tambah alamat pickup (untuk mengubah alamat, pakai PUT /address/{id})
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
         content:
@@ -75,7 +84,9 @@ paths:
     delete:
       operationId: deleteAddress
       summary: Hapus alamat pickup
-      description: Menghapus 1 alamat pickup milik akun terautentikasi.
+      description: >-
+        Menghapus 1 alamat milik akun (permanen). id hilang/sudah dihapus/bukan milik akun → 400 "Something went wrong";
+        id bukan ObjectId → 400 "Error on delete address". Hapus kedua kali → error pertama, bukan sukses.
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
         required: true
@@ -102,7 +113,10 @@ paths:
     put:
       operationId: updateAddress
       summary: Update data alamat pickup by ID
-      description: Mengubah field alamat pickup tertentu. Field yang tidak dikirim tidak akan diubah.
+      description: >-
+        Hanya field yang dikirim yang diubah; body kosong sukses tanpa perubahan; field di luar skema diabaikan.
+        Wilayah (provinsi/kota/kecamatan/kelurahan/kode pos) selalu dari PICKUP_AUTOFILL. Galat: 400 id bukan ObjectId,
+        422 ValidationError (alamat bukan milik akun, PIC phone invalid/null, PICKUP_AUTOFILL kosong/tidak ditemukan, SHIPPER_AUTOFILL tidak ditemukan).
       parameters:
         - $ref: '#/components/parameters/ApiKey'
         - name: id
@@ -130,10 +144,18 @@ paths:
   /api/public/{apiKey}/time:
     get:
       operationId: listPickupTimes
-      summary: List jadwal pickup untuk satu origin
+      summary: List jadwal pickup mendatang
+      description: >-
+        Tanpa parameter → semua jadwal mendatang untuk semua alamat (jadwal lewat tidak pernah dikembalikan). Tanpa pagination
+        dan tanpa urutan; hasil tidak menyebut alamatnya — kirim address untuk satu alamat.
       parameters:
         - $ref: '#/components/parameters/ApiKey'
-        - { name: address, in: query, required: true, schema: { type: string } }
+        - { name: address, in: query, required: false, schema: { type: string }, description: '_id alamat; tidak ada/tanpa jadwal → []' }
+        - name: courier
+          in: query
+          required: false
+          schema: { type: string }
+          description: 'Sembunyikan slot yang tak bisa dipakai kurir (case-sensitive): JNE tanpa Minggu & tanpa 19:00/20:00; anteraja tanpa Minggu; iDexpress tanpa 20:00 dan hanya > 90 menit dari sekarang; lainnya tanpa filter.'
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -159,8 +181,17 @@ paths:
               required: [address_id, date, time]
               properties:
                 address_id: { type: string }
-                date: { type: string, pattern: '^\d{2}-\d{2}-\d{4}$', example: '11-27-2022', description: 'Format mm-dd-yyyy (bukan ISO); jadwal minimal 90 menit dari waktu saat ini' }
-                time: { type: string, enum: ['9:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00'] }
+                date:
+                  description: >-
+                    String MM-DD-YYYY (mis. "11-30-2026") ATAU number Unix ms (mis. 1794787200000). Timestamp sebagai string ditolak.
+                    Add Time tidak mengecek 90 menit; Create order yang menolak ("invalid pickup time").
+                  oneOf:
+                    - { type: string, pattern: '^\d{2}-\d{2}-\d{4}$', example: '11-30-2026' }
+                    - { type: integer, example: 1794787200000 }
+                time: { type: string, enum: ['09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'], description: 'Selalu dua digit; "9:00" ditolak' }
+      description: >-
+        Setiap panggilan membuat jadwal baru (meski address/date/time sama) — buat sekali, pakai ulang _id.
+        Galat: 400 field hilang (satu per satu: address_id, time, date) / time tidak diizinkan / address_id atau date tidak valid; 404 address not found.
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -185,23 +216,21 @@ paths:
           in: query
           schema: { type: string, default: JNE, enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, spx, all] }
           description: >-
-            Kurir yang dipilih, case-sensitive (Sap diterima, SAP/sap → 400 Invalid courier).
-            Docs resmi (cek 2026-11-11) mencantumkan `spx`, tetapi live 2026-09-25 semua ejaan SPX → 400 Invalid courier;
-            ambil tarif SPX dari `all` sampai dicek ulang.
-            Ninja discontinued per 1 Sept 2026 (→ 400 COURIER_DISABLED).
-        - { name: weight, in: query, schema: { type: number, default: 1 }, description: kg }
-        - { name: COD_AMOUNT, in: query, schema: { type: integer }, description: 'IDR; = Nilai Barang + Ongkir' }
+            Kurir, case-sensitive, hanya sekali (Sap diterima, SAP/sap → 400 Invalid courier). `spx` tunggal kini berfungsi
+            (sandbox 2026-11-19 → 200 dengan pickupSchedule). Ninja (atau spx saat SPX dimatikan) → 400 code COURIER_DISABLED.
+        - { name: weight, in: query, schema: { type: number, default: 1 }, description: 'kg, positif; desimal boleh (0.5)' }
+        - { name: COD_AMOUNT, in: query, schema: { type: integer }, description: 'IDR (nilai barang + ongkir); hanya untuk menghitung codFee' }
         - name: isDangerousGoods
           in: query
           schema: { type: boolean, default: false }
-          description: "Set true / 1 untuk tarif Dangerous Goods. Estimasi menandai SiCepat, Sap, iDexpress, JT; POST /order hanya konsisten untuk SiCepat (HALU) & iDexpress (docs/02 §2.1)"
+          description: "true / 1 → tarif & cakupan Dangerous Goods. Hanya SiCepat dan iDexpress membawa DG; kurir lain isDangerousGoodsSupported=false."
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
           description: >-
-            data = objek CourierRate bila courier tunggal, ATAU map {courierKey: CourierRate} bila all.
-            Key map berbeda casing dari nama shipment; teramati 2026-09-25: JNE, JNECargo, SiCepat, SiCepatCargo,
-            SAP, SAPLite, SapCargo, iDexpress, JT, lion, iDexpressCargo, anteraja, spx, pos.
+            data = objek CourierRate bila courier tunggal, ATAU map {courierKey: CourierRate} bila all. Docs resmi: 14 key
+            JNE, JNECargo, SiCepat, SiCepatCargo, SAP, SAPLite, SapCargo, iDexpress, JT, lion, iDexpressCargo, anteraja, spx, pos,
+            plus JTEco bila rute punya tarif J&T ECO dan request bukan DG (JTEco bukan nilai courier; pesan via eco:true pada order JT).
           content:
             application/json:
               schema:
@@ -217,13 +246,19 @@ paths:
   /api/order/allEstimatePublic:
     get:
       operationId: estimatePublic
-      summary: Cek ongkir semua kurir (public, flat diskon 20%) — TANPA prefix /api/public/{key}
+      summary: Cek ongkir semua kurir (public, diskon dasar 20%) — TANPA key, TANPA prefix /api/public/{key}
+      description: >-
+        15 key: JNE, JNECargo, SiCepat, SiCepatCargo, SAP, SAPLite, SapCargo, iDexpress, iDlite, JT, lion, iDexpressCargo,
+        anteraja, spx, pos (iDlite bukan nilai courier). Hanya memeriksa format id; id valid yang tidak cocok alamat tetap
+        mengembalikan tarif. Tidak memeriksa batas COD. Galat 400 "from or to is empty" / "origin_id is invalid".
+        Teramati sandbox 2026-11-19: 200, 15 key; + JTEco dengan withCourierServices=true.
       parameters:
         - { name: origin_id, in: query, required: true, schema: { type: string } }
         - { name: destination_id, in: query, required: true, schema: { type: string } }
         - { name: weight, in: query, schema: { type: number, default: 1 } }
-        - { name: COD_AMOUNT, in: query, schema: { type: integer } }
-        - { name: isDangerousGoods, in: query, schema: { type: boolean, default: false }, description: Tarif Dangerous Goods }
+        - { name: COD_AMOUNT, in: query, schema: { type: integer }, description: 'hanya untuk codFee' }
+        - { name: isDangerousGoods, in: query, schema: { type: boolean, default: false }, description: Tarif & cakupan Dangerous Goods }
+        - { name: withCourierServices, in: query, schema: { type: boolean, default: false }, description: 'true → juga layanan non-default; saat ini JTEco (bila rute punya tarif ECO dan bukan DG)' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -239,7 +274,11 @@ paths:
   /api/order/allEstimate3PL:
     get:
       operationId: estimate3pl
-      summary: Cek ongkir 3PL (harga standar tanpa promo) — TANPA prefix /api/public/{key}
+      summary: Cek ongkir 3PL (harga standar tanpa diskon/flat) — TANPA key, TANPA prefix /api/public/{key}
+      description: >-
+        15 key seperti allEstimatePublic (+ JTEco bila rute punya tarif ECO dan bukan DG). Entri ringkas: price, estimatedDate,
+        unsupported, unsupported_cod (null = kurir tidak menjawab, bukan ya/tidak), isDangerousGoodsSupported (bila DG),
+        minimumWeightCargo (entri cargo), isFlat (anteraja). Tanpa COD_AMOUNT (diabaikan bila dikirim).
       parameters:
         - { name: origin_id, in: query, required: true, schema: { type: string } }
         - { name: destination_id, in: query, required: true, schema: { type: string } }
@@ -260,7 +299,12 @@ paths:
   /api/public/{apiKey}/order/getPerformancePublic:
     post:
       operationId: getPerformancePublic
-      summary: Skor performa kurir
+      summary: Skor performa kurir di kota tujuan (whitelist di produksi; terbuka di sandbox)
+      description: >-
+        Permission Check shipping fee. bestCourier = skor tertinggi yang bisa melayani rute (JNE bila tidak ada);
+        recommendedDGCourier = terbaik di antara kurir isDangerousGoodsSupported (iDexpress bila tidak ada);
+        recommended selalu JNE — pakai bestCourier. anteraja/pos/spx selalu skor 0. city tidak cocok → semua 0.
+        Galat: 400 allEstimateData is required, 405 bukan POST, 500 body bukan JSON.
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
         required: true
@@ -270,7 +314,7 @@ paths:
               type: object
               required: [city, allEstimateData]
               properties:
-                city: { type: string, description: CITY_NAME dari /address/search }
+                city: { type: string, description: 'CITY_NAME dari /address/search, persis & case-sensitive (mis. BANDUNG)' }
                 allEstimateData: { type: object, description: 'data dari /order/estimate?courier=all atau /allEstimatePublic' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
@@ -289,7 +333,8 @@ paths:
                             type: array
                             items: { type: object, properties: { key: { type: string }, score: { type: number } } }
                           bestCourier: { type: string }
-                          recommended: { type: string }
+                          recommendedDGCourier: { type: string }
+                          recommended: { type: string, description: 'Selalu JNE; pakai bestCourier' }
 
   /api/public/{apiKey}/invoices:
     get:
@@ -297,11 +342,13 @@ paths:
       summary: List invoice + saldo akun
       parameters:
         - $ref: '#/components/parameters/ApiKey'
-        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: size, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: keyword, in: query, schema: { type: string }, description: 'Pencarian nomor invoice, ORDER_ID, atau nomor resi (cnote_no)' }
-        - { name: dateRange, in: query, schema: { type: string }, description: 'JSON {"startDate":"…","endDate":"…"}' }
-        - { name: invoiceFilter, in: query, schema: { type: string }, description: 'Jenis invoice; gunakan all atau kosong untuk semua' }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 1 }, description: 'Diabaikan bila cursor dikirim' }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 }, description: '> 100 → 400' }
+        - { name: cursor, in: query, schema: { type: string }, description: 'nextCursor dari respons sebelumnya; tak dikenal → 400' }
+        - { name: keyword, in: query, schema: { type: string }, description: 'Potongan nomor invoice, ORDER_ID, cnote_no, deskripsi item, atau nominal persis. Teks polos (karakter seperti ( → 400)' }
+        - { name: ids, in: query, schema: { type: string }, description: 'inv_number dipisah koma' }
+        - { name: dateRange, in: query, schema: { type: string }, description: 'JSON {"startDate":"…","endDate":"…"} — keduanya wajib' }
+        - { name: invoiceFilter, in: query, schema: { type: string, enum: [all, typePayment, typeRefund, typeAddBalance, typeWithdraw, typeReconciliation] }, description: 'Tipe tak dikenal → daftar kosong' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -313,14 +360,17 @@ paths:
                   - $ref: '#/components/schemas/Envelope'
                   - properties:
                       data: { type: array, items: { type: object, additionalProperties: true } }
-                      count: { type: integer }
-                      balance: { type: integer, description: 'saldo akun (IDR)' }
+                      count: { type: integer, description: 'jumlah invoice yang cocok filter (semua halaman)' }
+                      balance: { type: integer, description: 'saldo akun (IDR), tidak terpengaruh filter' }
+                      nextCursor: { type: string, description: 'kosong pada halaman terakhir' }
 
   /api/public/{apiKey}/dropshippers:
     post:
       operationId: addDropshipper
       summary: Tambah master dropshipper (dedup by name + phone)
-      description: Menyimpan data dropshipper ke master akun. Jika nama dan no. HP persis sama sudah ada, record lama dikembalikan (idempoten).
+      description: >-
+        Menyimpan dropshipper (nama & no. HP pengirim pada shipment/label dropship). Nama + phone persis sama → record lama
+        dikembalikan (pencocokan exact: beda kapital atau 08…/+62… = dropshipper berbeda). Kirim phone sebagai string.
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
         required: true
@@ -337,14 +387,15 @@ paths:
                   - $ref: '#/components/schemas/Envelope'
                   - properties:
                       data: { $ref: '#/components/schemas/Dropshipper' }
-        '400': { description: 'name atau phone kosong/invalid' }
-        '401': { description: 'API Key invalid atau tidak punya izin createOrder' }
-        '403': { description: 'Fitur Dropshipper belum diaktifkan di akun' }
-        '500': { description: 'Internal server error' }
+        '400': { description: 'Missing fields / Invalid Dropshipper phone number / Invalid Dropshipper name (spasi saja)' }
+        '403': { description: 'Not allowed (key/izin/IP) atau fitur Dropshipper belum aktif (aktifkan lewat Seller Web)' }
+        '500': { description: 'name/phone bukan string, atau body bukan JSON' }
     get:
       operationId: searchDropshippers
       summary: Cari master dropshipper (prefix search)
-      description: Mencari dropshipper tersimpan berdasarkan prefix nama atau no. HP (case-insensitive).
+      description: >-
+        Prefix nama atau no. HP (case-insensitive), diurutkan nama, default 20 per halaman. Tanpa total: halaman terakhir
+        bila jumlah < perPage. Karakter seperti ( atau [ di search → 500.
       parameters:
         - $ref: '#/components/parameters/ApiKey'
         - { name: search, in: query, schema: { type: string }, description: 'Prefix nama atau no. HP (URL-encode tanda plus sebagai %2B)' }
@@ -357,8 +408,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DropshipperListResponse' }
         '400': { description: 'perPage > 100' }
-        '401': { description: 'Unauthorized' }
-        '403': { description: 'Fitur Dropshipper tidak aktif' }
+        '403': { description: 'Not allowed, atau fitur Dropshipper tidak aktif' }
+        '500': { description: 'search berisi karakter regex seperti ( atau [' }
 
   /api/public/{apiKey}/label-generation:
     post:
@@ -372,13 +423,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/LabelGenerationRequest' }
       responses:
-        '202':
-          description: Job pembuatan label berhasil didaftarkan (PENDING)
+        '200':
+          description: >-
+            Job didaftarkan (status PENDING; tanpa downloadUrl, juga saat job aktif yang sama dipakai ulang). Docs resmi tidak
+            menyebut kode status; versi lama repo ini menulis 202 — terima 2xx.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LabelGenerationPendingResponse' }
-        '400': { description: 'Format tidak kompatibel, atau lebih dari 1 orderId dikirim' }
-        '403': { description: 'Akun tidak di-whitelist atau order bukan milik akun' }
+        '400': { description: 'orderId/courier/format hilang, lebih dari 1 orderId, format tak dikenal, atau thermal-new untuk kurir selain JT/spx' }
+        '403': { description: 'Not allowed (key/IP/whitelist), atau Order does not belong to this account' }
         '404': { description: 'Order tidak ditemukan' }
         '429': { description: 'Print limit exceeded: maksimal 8 print action per menit' }
 
@@ -386,7 +439,9 @@ paths:
     get:
       operationId: getLabelGenerationStatus
       summary: Cek status dan download URL label PDF
-      description: Read-only; tidak mengonsumsi kuota print 8/menit. URL download aktif selama 15 menit saat COMPLETED.
+      description: >-
+        Read-only; tidak mengonsumsi kuota print 8/menit. downloadUrl hanya saat COMPLETED, aktif 15 menit, baru tiap poll.
+        FAILED tetap 200 success:true (kegagalan di data.status). Di sandbox label siap ~25 detik; polling beberapa detik sekali.
       parameters:
         - $ref: '#/components/parameters/ApiKey'
         - name: labelGenerationId
@@ -408,8 +463,10 @@ paths:
       operationId: createOrder
       summary: Buat shipment (batch)
       description: >-
-        Saldo kurang → order tetap sukses dibuat dengan isPaid=false dan cnote_no=null. JT Premium/SiCepat → 1 batch per akun (lihat 409).
-        Ninja discontinued per 1 Sept 2026. Header opsional `idempotencyKey` (1–50 karakter, diingat 24 jam per akun):
+        200 + success:true = batch diproses, BUKAN semua order terkirim: cek tiap order (active+cnote_no; isPaid:false;
+        status:error + error; ordersClosedDestination). Saldo kurang → isPaid=false, cnote_no=null. JT Premium/SiCepat → 1 batch per akun (409).
+        Field milik sistem (price, estimatedPrice, estimatedSpecialPrice, isFlat, discount*, allEstimateData, iDlite, iDliteDiscount)
+        → 400 "Fields not allowed in public API request" meski bernilai 0/null/"". Ninja → 400. Pesan bisa ID atau EN (bahasa akun). Header opsional `idempotencyKey` (1–50 karakter, diingat 24 jam per akun):
         kirim body yang sama persis pada setiap retry. Replay mengembalikan respons pertama dengan header
         `Idempotent-Replayed: true` dan field `idempotentReplayed: true`; respons 5xx pertama juga di-replay, tidak dijalankan ulang.
       parameters:
@@ -440,7 +497,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Envelope' }
         '403':
-          description: COD Pos Indonesia tidak tersedia untuk akun (delivered rate < 82%) — lihat docs/02 §3.3
+          description: 'Not allowed (key/izin/IP), fitur Dropshipper nonaktif, atau COD Pos Indonesia tidak tersedia (status new_seller/insufficient/blocked) — docs/02 §3.3'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PosCodIneligible' }
@@ -472,19 +529,25 @@ paths:
         - $ref: '#/components/parameters/ApiKey'
         - { name: order_id, in: query, schema: { type: string } }
         - { name: tracking_id, in: query, schema: { type: string } }
-        - { name: page, in: query, schema: { type: string } }
-        - { name: size, in: query, schema: { type: string } }
-        - { name: courier, in: query, schema: { type: string } }
-        - { name: batch, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 1 }, description: 'Diabaikan bila cursor dikirim; tanpa courier page×size ≤ 1500' }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 }, description: '> 100 → 400' }
+        - { name: cursor, in: query, schema: { type: string }, description: 'nextCursor dari respons sebelumnya (dianjurkan untuk daftar panjang); invalid → 400' }
+        - { name: courier, in: query, schema: { type: string }, description: 'Nilai persis; nilai lain tidak ditolak dan bisa memberi daftar salah. courier=Ninja tetap bisa membaca order lama' }
+        - { name: batch, in: query, schema: { type: string }, description: 'Nomor batch (mis. 26111310KDX9LE), bukan _id batch' }
         - { name: cod, in: query, schema: { type: string, enum: [COD, NON_COD] } }
-        - { name: status, in: query, schema: { type: string }, description: 'status dipisah koma atau objek {"DELIVERED":true}' }
-        - { name: category, in: query, schema: { type: string, enum: [collected_customer, yet_to_collect, need_attention, rts, pending_pickup, redelivery, undelivered, delivery_problem, over_sla, already_been_undelivered, been_undelivered_wo_ticket, been_undelivered_wo_proof] } }
-        - { name: ticketFilter, in: query, schema: { type: string, enum: [withticket, without, open, replied] } }
-        - { name: receiverFilter, in: query, schema: { type: string } }
-        - { name: no_update_after_hour, in: query, schema: { type: string } }
-        - { name: no_update_after_day, in: query, schema: { type: string } }
-        - { name: dateRange, in: query, schema: { type: string }, description: 'JSON {"startDate":"…","endDate":"…"}' }
-        - { name: reseller, in: query, schema: { type: boolean } }
+        - { name: status, in: query, schema: { type: string }, description: 'kode status dipisah koma atau objek {"DELIVERED_PENDING":true}' }
+        - { name: keyword, in: query, schema: { type: string }, description: 'ORDER_ID, resi, nama penerima; dibaca sebagai regex — escape [ ( +' }
+        - { name: dateRange, in: query, schema: { type: string }, description: 'JSON {"startDate":"…","endDate":"…"} (URL-encoded); dibaca per hari WIB, endDate sampai akhir hari. Tanpa dateRange ≈ 6 bulan terakhir (belum diarsip)' }
+        - name: category
+          in: query
+          deprecated: true
+          schema: { type: string, enum: [collected_customer, yet_to_collect, need_attention, rts, pending_pickup, redelivery, undelivered, delivery_problem, over_sla, already_been_undelivered, been_undelivered_wo_ticket, been_undelivered_wo_proof] }
+          description: 'Tidak ada di docs resmi v2 (asal: plugin). Jangan diandalkan.'
+        - { name: ticketFilter, in: query, deprecated: true, schema: { type: string, enum: [withticket, without, open, replied] }, description: 'Tidak ada di docs resmi v2' }
+        - { name: receiverFilter, in: query, deprecated: true, schema: { type: string }, description: 'Tidak ada di docs resmi v2' }
+        - { name: no_update_after_hour, in: query, deprecated: true, schema: { type: string }, description: 'Tidak ada di docs resmi v2' }
+        - { name: no_update_after_day, in: query, deprecated: true, schema: { type: string }, description: 'Tidak ada di docs resmi v2' }
+        - { name: reseller, in: query, deprecated: true, schema: { type: boolean }, description: 'Tidak ada di docs resmi v2' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -494,10 +557,17 @@ paths:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/Envelope'
-                  - properties: { data: { type: array, items: { $ref: '#/components/schemas/TrackingInfo' } } }
+                  - properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/TrackingInfo' } }
+                      nextCursor: { type: string, description: 'kosong pada halaman terakhir' }
     delete:
       operationId: deleteOrders
-      summary: Hapus order (by ids / orderIds). Anteraja hanya setelah 5 menit.
+      summary: Hapus order (by ids / orderIds) — cek deletedCount, bukan success
+      description: >-
+        Hanya order berstatus active, error, PENDING PICKUP, PICKUP FAILED, PICKUP_FAILED_API (atau kosong). 200 success:true bisa
+        tetap menghapus 0/sebagian: baca deletedCount & deletedOrderIds. courier wajib untuk selain JNE (tanpa itu → "Orders already deleted").
+        lion/anteraja/pos/spx menambah errorMessages, ordersCount, totalBalanceRefund. Anteraja hanya ≥ 5 menit setelah dibuat.
+        Order hasil simulasi tidak bisa dihapus.
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
         content:
@@ -505,9 +575,9 @@ paths:
             schema:
               type: object
               properties:
-                courier: { type: string }
-                ids: { type: array, items: { type: string }, description: array _id order }
-                orderIds: { type: array, items: { type: string }, description: '(opsional) array ORDER_ID; jangan bersama ids' }
+                courier: { type: string, enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, spx], default: JNE }
+                ids: { type: array, items: { type: string }, description: 'array _id order (field ids jamak; id tunggal tidak diterima)' }
+                orderIds: { type: array, items: { type: string }, description: 'array ORDER_ID; bila dikirim, ids diabaikan' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200': { $ref: '#/components/responses/Envelope' }
@@ -563,8 +633,13 @@ paths:
               type: object
               required: [batch_id]
               properties:
-                batch_id: { type: string }
-                courier: { type: string }
+                batch_id: { type: string, description: '_id batch (batch_id dari create order atau _id dari GET /batch)' }
+                courier: { type: string, enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, spx], default: JNE, description: 'Wajib selain JNE; tidak cocok → batch not found' }
+      description: >-
+        Total semua order unpaid di batch ditagih sekaligus; saldo kurang → tidak ada yang dibayar (400 balance is not enough).
+        Bentuk respons beda per kurir: JNE/SiCepat/Sap/iDexpress/JT → data = jumlah dibayar (number) + cnote_no (array) di top level;
+        lion/anteraja/pos/spx → data = { cnote_no, count }. Tidak ada yang perlu dibayar: kelompok pertama 200 data 0,
+        kelompok kedua 400 "no unpaid orders in this batch".
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -574,12 +649,20 @@ paths:
               schema:
                 allOf:
                   - $ref: '#/components/schemas/Envelope'
-                  - properties: { count: { type: integer, description: jumlah order dibayar } }
+                  - properties:
+                      data:
+                        oneOf:
+                          - { type: integer, description: 'jumlah order dibayar (JNE, SiCepat, Sap, iDexpress, JT)' }
+                          - type: object
+                            description: 'lion, anteraja, pos, spx'
+                            properties: { cnote_no: { type: array, items: { type: string } }, count: { type: integer } }
+                      cnote_no: { type: array, items: { type: string }, description: 'top level untuk JNE, SiCepat, Sap, iDexpress, JT' }
 
   /api/public/{apiKey}/my-users:
     get:
       operationId: getAssignees
       summary: List assignee (user tim)
+      description: Cukup key aktif dari IP yang diizinkan (tanpa permission lain). Tanpa parameter & pagination. Bukan GET → 405.
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
@@ -598,19 +681,34 @@ paths:
   /api/public/{apiKey}/batch:
     get:
       operationId: getBatches
-      summary: List batch
+      summary: List batch (terbaru dulu; tanpa cursor)
       parameters:
         - $ref: '#/components/parameters/ApiKey'
-        - { name: page, in: query, schema: { type: string } }
-        - { name: size, in: query, schema: { type: string } }
-        - { name: courier, in: query, schema: { type: string } }
-        - { name: dateRange, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 1 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: courier, in: query, schema: { type: string }, description: 'Nilai persis; courier=Ninja membaca batch lama' }
+        - { name: dateRange, in: query, schema: { type: string }, description: 'JSON; kedua batas eksklusif, dibaca UTC; bukan JSON → 400' }
+        - { name: batchFilter, in: query, schema: { type: string, enum: [unpaid, error, active, delivered, undelivered, rts, reconciled] }, description: 'Hanya batch dengan counter tsb > 0' }
+        - { name: keyword, in: query, schema: { type: string }, description: 'Nomor batch, teks polos (bukan regex)' }
+        - { name: address_id, in: query, schema: { type: string }, description: '_id alamat pickup' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
-        '200': { $ref: '#/components/responses/Envelope' }
+        '200':
+          description: Daftar batch
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      count: { type: integer, description: 'total batch yang cocok filter' }
+                      data: { type: array, items: { $ref: '#/components/schemas/Batch' } }
     delete:
       operationId: deleteBatch
-      summary: Hapus batch
+      summary: Hapus batch — cek deletedCount/unDeletedCount, bukan success
+      description: >-
+        Menghapus batch dan semua order di dalamnya yang masih bisa dihapus (aturan status sama dengan DELETE /order).
+        Hapus dua kali → 200 deletedCount 0. Draft batch → isBatchDraft:true. courier wajib selain JNE.
       parameters: [{ $ref: '#/components/parameters/ApiKey' }]
       requestBody:
         content:
@@ -619,8 +717,8 @@ paths:
               type: object
               required: [id]
               properties:
-                id: { type: string, description: batch _id }
-                courier: { type: string }
+                id: { type: string, description: '_id batch ATAU nomor batch (nilai tunggal, bukan array)' }
+                courier: { type: string, enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, spx], default: JNE }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200': { $ref: '#/components/responses/Envelope' }
@@ -628,10 +726,13 @@ paths:
   /api/public/{apiKey}/getReceiverScoreByNumberUser:
     get:
       operationId: getReceiverScore
-      summary: Skor penerima per kurir (by no. HP)
+      summary: Skor penerima per kurir + summary (by no. HP)
+      description: >-
+        Key aktif + IP saja. Produksi: whitelist (403) dan batas harian (429 sampai tengah malam WIB); sandbox: terbuka,
+        data contoh deterministik (nomor berakhiran 0 → bentuk tanpa kurir). Nomor tanpa transaksi tetap 200 (bukan 404).
       parameters:
         - $ref: '#/components/parameters/ApiKey'
-        - { name: search, in: query, required: true, schema: { type: string }, description: no. HP penerima }
+        - { name: search, in: query, required: true, schema: { type: string }, description: 'Satu no. HP; 08…/8…/62…/+62… menemukan record yang sama. Hilang/kosong/daftar → 422' }
       responses:
         '4XX': { $ref: '#/components/responses/Error' }
         '200':
@@ -644,7 +745,9 @@ paths:
                   - properties:
                       data:
                         type: object
-                        description: 'phone + objek per kurir { total, value, inProgress, delivered, rts, undelivered, rate }'
+                        description: >-
+                          phone (tanpa 0/62/+62) + objek per kurir { total, value, inProgress, delivered, rts, undelivered, rate (0–10) }
+                          ({} = tanpa data) + summary { average_number (0–10 | null), average_score (A … E-, prefix ≈ bila < 4 transaksi) }.
                         additionalProperties: true
 
 webhooks:
@@ -731,13 +834,13 @@ components:
         COUNTRY_NAME: { type: string }
         PROVINCE_NAME: { type: string }
         CITY_NAME: { type: string }
-        CITY_NAME_SI: { type: string }
         DISTRICT_NAME: { type: string }
         SUBDISTRICT_NAME: { type: string }
         ZIP_CODE: { type: string }
-        ORIGIN_CODE: { type: string }
-        DESTINATION_CODE: { type: string }
-        CODE_SAP: { type: string }
+        fullAddress: { type: string }
+        fullAddressWithoutDistrict: { type: string }
+      additionalProperties: true
+      description: 'Field lain (kode kurir, flag cakupan) data internal — rujuk alamat dengan _id saja.'
 
     PickupAddress:
       type: object
@@ -753,8 +856,10 @@ components:
         PICKUP_REGION: { type: string }
         PICKUP_DISTRICT: { type: string }
         PICKUP_SUBDISTRICT: { type: string }
-        PICKUP_DESTINATION_CODE: { type: string }
-        PICKUP_ORIGIN_CODE: { type: string }
+        PICKUP_ZIP: { type: string }
+        user_id: { type: string }
+        createdAt: { type: string }
+        updatedAt: { type: string }
         pinpointData:
           type: object
           properties:
@@ -772,15 +877,14 @@ components:
         PICKUP_NAME: { type: string }
         pinpointData:
           type: object
-          description: Lokasi titik koordinat pickup (wajib untuk Instant/Same Day)
+          description: 'Wajib bila alamat dipakai untuk scheduled pickup Pos Indonesia (pos). lat -90..90, lng -180..180; null/omit bila tidak ada'
           properties:
-            lat: { type: number }
-            lng: { type: number }
+            lat: { type: number, minimum: -90, maximum: 90 }
+            lng: { type: number, minimum: -180, maximum: 180 }
         SHIPPER_ADDR1: { type: string, description: (opsional) alamat retur berbeda }
         SHIPPER_AUTOFILL: { type: string }
         SHIPPER_CONTACT: { type: string }
         SHIPPER_PHONE: { type: string }
-        _id: { type: string, description: hanya untuk update }
 
     PickupAddressUpdateInput:
       type: object
@@ -789,18 +893,27 @@ components:
         PICKUP_PIC: { type: string }
         PICKUP_PIC_PHONE: { type: string }
         PICKUP_ADDRESS: { type: string }
-        PICKUP_CITY: { type: string }
-        PICKUP_REGION: { type: string }
-        PICKUP_DISTRICT: { type: string }
-        PICKUP_SUBDISTRICT: { type: string }
+        PICKUP_AUTOFILL: { type: string, minLength: 1, description: 'mengganti seluruh wilayah; tidak boleh kosong' }
+        pinpointData:
+          type: [object, 'null']
+          properties:
+            lat: { type: number, minimum: -90, maximum: 90 }
+            lng: { type: number, minimum: -180, maximum: 180 }
+        SHIPPER_ADDR1: { type: string }
+        SHIPPER_AUTOFILL: { type: string }
+        SHIPPER_CONTACT: { type: string }
+        SHIPPER_PHONE: { type: string }
+      description: 'Field wilayah (PICKUP_CITY/REGION/DISTRICT/SUBDISTRICT) bukan parameter: berasal dari PICKUP_AUTOFILL.'
 
     PickupTime:
       type: object
       required: [_id, date, time]
       properties:
         _id: { type: string }
-        date: { type: string, description: Tanggal yang dinormalisasi API }
-        time: { type: string }
+        date:
+          type: [string, integer]
+          description: 'POST /time → ISO 8601 (tengah malam UTC); GET /time → Unix ms dengan jam Jakarta ditulis seolah UTC (baca dalam UTC)'
+        time: { type: string, example: '13:00' }
         status: { type: string }
         isSunday: { type: boolean }
         address: { type: object, additionalProperties: true }
@@ -811,7 +924,6 @@ components:
         price: { type: number }
         estimatedPrice: { type: number }
         estimatedSpecialPrice: { type: number, description: harga setelah diskon }
-        coverage_cod: { type: boolean }
         currency: { type: string, example: IDR }
         discountPercent: { type: number }
         discount: { type: number }
@@ -825,13 +937,13 @@ components:
         discountExtra: { type: number }
         unsupportedOriginSpx:
           type: boolean
-          description: 'Hanya entri spx (teramati 2026-09-25). true = origin tidak dilayani SPX; perlakukan seperti unsupported=true.'
+          description: 'Tidak ada di docs resmi; teramati live pada entri spx (2026-09-25). true → perlakukan seperti unsupported=true.'
         unsupportedPickup:
           type: boolean
-          description: 'Hanya entri spx (teramati 2026-09-25). Arti belum dipastikan.'
+          description: 'Tidak ada di docs resmi; teramati live pada entri spx (2026-09-25). Arti belum dipastikan.'
         pickupSchedule:
           type: object
-          description: 'Hanya entri spx (teramati 2026-09-25). Map tanggal (yyyy-mm-dd) → daftar slot pickup.'
+          description: 'Hanya entri spx (docs resmi): slot pickup SPX hari ini s.d. lusa per tanggal YYYY-MM-DD; timeEpoch dalam detik.'
           additionalProperties:
             type: array
             items:
@@ -840,11 +952,12 @@ components:
                 timeRangeId: { type: integer }
                 start: { type: string, example: '14:00' }
                 end: { type: string, example: '22:00' }
-                timeEpoch: { type: integer, description: 'epoch (skala detik); hubungan dengan start/end belum dipastikan' }
+                timeEpoch: { type: integer, description: 'Unix detik (docs resmi)' }
         cargoPrice: { type: number }
         cargoEstimatedPrice: { type: number }
         cargoDiscountPercent: { type: number }
-        minimumWeightCargo: { type: number, description: 'hanya kurir cargo (mode 3PL)' }
+        minimumWeightCargo: { type: number, description: 'hanya entri cargo (3PL)' }
+        isFlat: { type: boolean, description: '3PL: hanya anteraja' }
 
     DropshipperInput:
       type: object
@@ -880,7 +993,7 @@ components:
       required: [orderId, courier, format]
       properties:
         orderId: { type: string, description: Satu ID order yang valid dan telah terbayar }
-        courier: { type: string, example: JNE }
+        courier: { type: string, example: JNE, description: 'Case-insensitive di endpoint ini' }
         format:
           type: string
           enum:
@@ -904,7 +1017,7 @@ components:
           required: [labelGenerationId, status]
           properties:
             labelGenerationId: { type: string }
-            status: { type: string, enum: [PENDING] }
+            status: { type: string, enum: [PENDING, PROCESSING, COMPLETED, FAILED], description: 'Request bisa memakai ulang job aktif; tetap tanpa downloadUrl' }
 
     LabelGenerationStatusResponse:
       type: object
@@ -921,6 +1034,33 @@ components:
             downloadUrl: { type: string, description: GCS signed URL (aktif 15 menit) }
             errorMessage: { type: string }
 
+    Batch:
+      type: object
+      additionalProperties: true
+      properties:
+        _id: { type: string, description: 'batch_id untuk pay-unpaid; id untuk DELETE /batch' }
+        id: { type: string, description: 'nomor batch (bisa bersufiks, mis. -1); dipakai sebagai batch di GET /order' }
+        courier: { type: string }
+        orders: { type: integer }
+        error: { type: integer }
+        unpaid: { type: integer }
+        delivered: { type: integer }
+        active: { type: integer }
+        undelivered: { type: integer }
+        rts: { type: integer }
+        reconciled: { type: integer }
+        totalToPay: { type: number }
+        totalToPaySpecial: { type: number, description: 'yang ditagih pay-unpaid' }
+        address_id: { type: string }
+        isDraft: { type: boolean }
+        isArchived: { type: boolean }
+        createdAt: { type: string }
+        orderData:
+          type: array
+          items:
+            type: object
+            properties: { orderId: { type: string }, cnote_no: { type: [string, 'null'] }, status: { type: string }, SPECIAL_INS: { type: [string, 'null'] } }
+
     CreateOrderRequest:
       type: object
       required: [courier, pickup, orders]
@@ -929,8 +1069,8 @@ components:
           type: string
           enum: [JNE, SiCepat, Sap, iDexpress, JT, lion, anteraja, pos, spx]
           description: >-
-            Kurir untuk shipment (9 nilai di docs resmi, cek 2026-11-11). `spx` = SPX Express (Shopee Express):
-            tercantum di docs resmi, belum teramati di create-order live. Ninja discontinued per 1 September 2026.
+            Kurir untuk shipment, case-sensitive (9 nilai docs resmi v2). `spx` = SPX Express (sandbox: hanya area Jakarta).
+            Ninja discontinued per 1 September 2026 → 400.
         pickup: { $ref: '#/components/schemas/Pickup' }
         orders:
           type: array
@@ -941,9 +1081,9 @@ components:
       type: object
       required: [type, address_id]
       properties:
-        type: { type: string, enum: [scheduledPickup, dropOff] }
+        type: { type: string, enum: [scheduledPickup, dropOff], description: 'dropOff untuk JNE/spx hanya bila Drop Off aktif di akun; anteraja tidak mendukung dropOff' }
         address_id: { type: string, description: '_id alamat pickup dari GET /address; bukan _id wilayah' }
-        time_id: { type: string, description: wajib bila scheduledPickup }
+        time_id: { type: string, description: 'wajib bila scheduledPickup; ≥ 90 menit dari sekarang; spx: harus di dalam slot SPX hari itu' }
         volume: { type: string, enum: [volumeMotor, volumeMobil, volumeTruck], description: wajib bila scheduledPickup }
       allOf:
         - if:
@@ -974,20 +1114,21 @@ components:
             required: [goodsValue]
       properties:
         customerAddressDataId: { type: string, description: 'destination_id (_id dari /address/search)' }
-        customerAddress: { type: string, minLength: 10 }
+        customerAddress: { type: string, minLength: 1 }
         customerName: { type: string, minLength: 1 }
-        customerPhone: { type: string, pattern: '^\d{10,15}$' }
+        customerPhone: { type: string, description: '10–15 digit (62/+62 dihitung); spasi & tanda hubung diterima; ekstensi x12 diterima tapi tidak dihitung' }
         parcelContent: { type: string, minLength: 1 }
-        weight: { type: number, minimum: 1, description: 'kg; bila customProducts diisi harus = Σ(qty×weight)' }
+        weight: { type: number, exclusiveMinimum: 0, description: 'kg, positif (negatif → 400). JT ≤ 50; anteraja/pos/spx 1–50. Bila customProducts: = Σ(qty×weight)' }
         quantity: { type: integer, minimum: 1, description: 'bila customProducts diisi harus = Σ(qty)' }
-        goodsValue: { type: number, minimum: 0, description: 'NON-COD (eksklusif vs COD)' }
-        COD: { type: number, minimum: 0, description: 'COD = Nilai Barang + Ongkir + COD Fee (eksklusif vs goodsValue)' }
+        goodsValue: { type: number, minimum: 0, description: 'Non-COD; wajib bila COD kosong' }
+        COD: { type: number, minimum: 1000, description: 'Nilai barang + ongkir + biaya COD; ≥ Rp1.000 (lion ≥ Rp10.000), ≤ batas COD kurir. Bila COD & goodsValue dikirim, COD dipakai' }
+        eco: { type: [boolean, 'null'], description: 'Hanya courier JT: true → J&T ECO (SERVICE_CODE ECO). Tidak bisa dengan cargo/isDangerousGoods. Rute tanpa ECO → ordersClosedDestination (tidak dialihkan ke REG)' }
         assignee: { type: string, description: _id dari /my-users }
         destinationMark: { type: string }
         deliveryInstruction: { type: string }
         dontIncludeSubdistrict: { type: boolean }
         cargo: { type: boolean, description: 'true → Cargo (JNE, SiCepat, Sap, iDexpress)' }
-        isDangerousGoods: { type: boolean, default: false, description: 'Dangerous Goods order. Konsisten di docs resmi: SiCepat (HALU), iDexpress; JT disebut di deskripsi field tetapi tidak di tabel DG — verifikasi di sandbox (docs/02 §2.1)' }
+        isDangerousGoods: { type: boolean, default: false, description: 'JSON Boolean. Hanya SiCepat (HALU) dan iDexpress (Regular); tidak bisa dengan cargo' }
         dropShipper:
           type: object
           description: Data dropshipper tersimpan dari master dropshippers
@@ -998,14 +1139,14 @@ components:
             phone: { type: string }
         customProducts:
           type: array
-          description: 'Hanya JNE, SiCepat, Sap, JNT. Aliases: quantity/orderQuantity, harga/regularPrice.'
+          description: 'Produk di tabel label. Item: name & qty wajib; variant, price, weight (default 1) opsional. Alias: quantity/orderQuantity, harga/regularPrice. weight & quantity order harus = totalnya.'
           items:
             type: object
-            required: [name]
+            required: [name, qty]
             properties:
               name: { type: string, minLength: 1 }
               variant: { description: string atau object }
-              qty: { type: number, minimum: 1, description: 'alias: quantity, orderQuantity' }
+              qty: { type: number, minimum: 1, description: 'wajib; alias: quantity, orderQuantity' }
               price: { type: number, minimum: 0, description: 'alias: harga, regularPrice' }
               weight: { type: number, exclusiveMinimum: 0, description: default 1 }
 
@@ -1017,7 +1158,8 @@ components:
         batch: { type: string }
         batch_id: { type: string }
         courier: { type: string }
-        errors: { type: array, items: {} }
+        errors: { type: array, items: {}, description: 'kosong bila batch dibuat' }
+        ordersClosedDestination: { type: array, items: {}, description: 'order yang TIDAK dibuat karena tujuan tidak dilayani (tidak ada di data)' }
         idempotentReplayed:
           type: boolean
           description: Ada (true) bila respons adalah replay idempotency — salinan, bukan status terkini
@@ -1034,7 +1176,11 @@ components:
               batch_id: { type: string }
               batch: { type: string }
               dropShipperId: { type: string }
-              error: {}
+              SERVICE_CODE: { type: string, description: 'REG, atau ECO untuk J&T ECO' }
+              _id: { type: string }
+              price: { type: number }
+              estimatedSpecialPrice: { type: number }
+              error: { description: 'Hanya bila status error: pesan kurir' }
 
     TrackingInfo:
       type: object
@@ -1052,23 +1198,37 @@ components:
         WEIGHT: { type: number }
         batch: { type: string }
         createdAt: { type: string }
+        SERVICE_CODE: { type: string }
+        isPaid: { type: boolean }
+        lastStatusChange: { type: string }
         history:
           type: array
+          description: 'Hanya pada lookup tracking_id/order_id (juga mencari arsip)'
           items:
             type: object
             properties:
               date: { type: string, description: 'Format DD-MM-YYYY HH:mm (Asia/Jakarta)' }
-              desc: { type: string, description: Keterangan progres status }
+              desc: { type: string, description: Keterangan progres status (teks kurir) }
+              code: { type: string, description: 'kode status kurir (JNE)' }
+              location: { type: string }
+              proofUrl: { type: string, description: 'JNE: foto bukti pada entri delivered' }
+        proofHistory:
+          type: array
+          description: 'Hanya terisi pada lookup order_id; kosong pada list & tracking_id'
+          items:
+            type: object
+            properties: { status: { type: string }, date: { type: string }, photo: { type: string }, video: { type: string } }
 
     WebhookPayload:
       type: object
-      required: [cnote_no, order_id, courier, status_category]
+      required: [cnote_no, order_id, courier, service_code, status_category]
       properties:
+        service_code: { type: [string, 'null'], description: 'REG / ECO dst.; selalu ada di body nyata, null bila order tanpa service code' }
         cnote_no: { type: string, description: Nomor resi / AWB pengiriman }
         order_id: { type: string, description: ID unik pesanan Mengantar }
         courier: { type: string, description: Kurir penangan pesanan }
         status_category:
           type: string
           description: >-
-            Kategori status pengiriman resmi Mengantar (PENDING PICKUP, PICKED UP, ON DELIVERY,
-            DELIVERED, UNDELIVERED, PICKUP FAILED, RTS, ACTIVE/WAITING NEXT PROCESS, ERROR, CANCELED/CANCELLED).
+            Kategori status (open-ended, beda per kurir — selalu sediakan default branch): PENDING PICKUP, PICKED UP, ON DELIVERY,
+            DELIVERED, UNDELIVERED, PICKUP FAILED, RTS, ACTIVE/WAITING NEXT PROCESS, ERROR, CANCELED/CANCELLED.
